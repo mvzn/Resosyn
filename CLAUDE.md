@@ -42,6 +42,24 @@ Outputs: `Builds/LinuxMakefile/build/Resosyn.vst3/` and `Builds/LinuxMakefile/bu
 - Use `juce::SmoothedValue` for all audio-rate parameter changes to prevent zipper noise.
 - Reach for `juce::dsp` module processors before writing custom DSP.
 
+## Filterbank-Specific Constraints
+
+**Memory layout — struct-of-arrays, not array-of-structs.** Grouping coefficients and states by field (not by filter) is required for AVX SIMD to work. Start with this layout; it cannot be easily refactored later:
+```cpp
+struct FilterBank {
+    float b0[32], b2[32];   // coefficients (b1 = 0 for bandpass)
+    float a1[32], a2[32];
+    float s1[32], s2[32];   // per-harmonic state
+};
+FilterBank voices[8];
+```
+
+**Denormals — flush filter state on voice end.** When a voice finishes its release, zero all `s1`/`s2` state arrays for that voice. `ScopedNoDenormals` in `processBlock` is not sufficient — subnormal state variables in decaying filters can cause a 100× CPU spike on a silent plugin.
+
+**Coefficient updates — subblock cadence, not per-sample.** Recalculate biquad coefficients every 16–32 samples (subblock loop inside `processBlock`), not every sample. Use a fast `sin/cos` polynomial approximation (~10 cycles) instead of `std::sin` — per-sample updates with `std::sin` across 256 filters costs ~13% of a core.
+
+**SIMD width target: AVX (8-wide float).** The 32 harmonic filters per voice are independent (same input, independent state), mapping cleanly onto 4 AVX passes per voice. Do not process filters serially in scalar code once the layout is in place.
+
 ## Code Style
 
 - `camelCase` for variables and methods, `PascalCase` for classes.
