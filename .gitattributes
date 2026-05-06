@@ -1,0 +1,12 @@
+* text=auto
+
+*.cpp text eol=lf
+*.h   text eol=lf
+*.jucer text eol=lf
+
+JuceLibraryCode/** linguist-generated
+Builds/**           linguist-generated
+
+*.so  binary
+*.a   binary
+*.vst3 binary

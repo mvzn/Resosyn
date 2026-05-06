@@ -1,0 +1,18 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/JuceLibraryCode",
+                "/home/mokram/JUCE/modules"
+            ],
+            "defines": [
+                "JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1"
+            ],
+            "compilerPath": "/usr/bin/g++",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}

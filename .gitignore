@@ -1,0 +1,11 @@
+# Ignore everything in this directory by default
+/*
+
+# Track only these
+!.gitignore
+!.gitattributes
+!/*.jucer
+!/Source/
+!/CLAUDE.md
+!/prd.md
+!/.vscode/
