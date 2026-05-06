@@ -6,6 +6,5 @@
 !.gitattributes
 !/*.jucer
 !/Source/
-!/CLAUDE.md
 !/prd.md
 !/.vscode/
