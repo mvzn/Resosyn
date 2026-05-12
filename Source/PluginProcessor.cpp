@@ -1,169 +1,211 @@
-/*
-  ==============================================================================
-
-    This file contains the basic framework code for a JUCE plugin processor.
-
-  ==============================================================================
-*/
-
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+using APVTS = juce::AudioProcessorValueTreeState;
+
+//==============================================================================
+juce::AudioProcessorValueTreeState::ParameterLayout ResosynAudioProcessor::createParameterLayout()
+{
+    APVTS::ParameterLayout layout;
+
+    auto makePID = [](const char* id) { return juce::ParameterID (id, 1); };
+
+    using NR = juce::NormalisableRange<float>;
+
+    // Excitation
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        makePID ("excitationMode"), "Mode",
+        juce::StringArray { "Noise", "Wavetable", "Sampler" }, 0));
+
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        makePID ("noiseColour"), "Noise Colour",
+        juce::StringArray { "White", "Pink", "Brown" }, 0));
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        makePID ("wavetablePosition"), "WT Position",
+        NR (0.0f, 1.0f), 0.0f));
+
+    // Sampler loop
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        makePID ("samplerLoopEnable"), "Loop Enable", true));
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        makePID ("samplerLoopStart"), "Loop Start", NR (0.0f, 1.0f), 0.0f));
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        makePID ("samplerLoopEnd"), "Loop End", NR (0.0f, 1.0f), 1.0f));
+
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        makePID ("samplerLoopType"), "Loop Type",
+        juce::StringArray { "Forward", "Ping-Pong" }, 0));
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        makePID ("samplerLoopCrossfade"), "Loop XFade",
+        NR (0.0f, 500.0f), 0.0f));
+
+    // Filterbank
+    {
+        NR qRange (0.1f, 200.0f);
+        qRange.setSkewForCentre (15.0f);
+        layout.add (std::make_unique<juce::AudioParameterFloat> (
+            makePID ("filterQ"), "Filter Q", qRange, 1.0f));
+    }
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        makePID ("filterDetune"), "Global Detune",
+        NR (-100.0f, 100.0f), 0.0f));
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        makePID ("filterStretch"), "Stretch", NR (0.0f, 1.0f), 0.0f));
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        makePID ("filterSpread"), "Spread", NR (0.0f, 1.0f), 0.0f));
+
+    // Envelope
+    {
+        NR timeRange (1.0f, 5000.0f);
+        timeRange.setSkewForCentre (200.0f);
+        layout.add (std::make_unique<juce::AudioParameterFloat> (
+            makePID ("envAttack"), "Attack", timeRange, 10.0f));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (
+            makePID ("envDecay"), "Decay", timeRange, 100.0f));
+    }
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        makePID ("envSustain"), "Sustain", NR (0.0f, 1.0f), 0.8f));
+
+    {
+        NR relRange (1.0f, 10000.0f);
+        relRange.setSkewForCentre (500.0f);
+        layout.add (std::make_unique<juce::AudioParameterFloat> (
+            makePID ("envRelease"), "Release", relRange, 500.0f));
+    }
+
+    // Morph
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        makePID ("timbreMorph"), "Timbre Morph", NR (0.0f, 1.0f), 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        makePID ("gainMorph"), "Gain Morph", NR (0.0f, 1.0f), 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        makePID ("noteMorphAmount"), "Note Morph", NR (0.0f, 1.0f), 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        makePID ("velocityMorphAmount"), "Vel Morph", NR (0.0f, 1.0f), 0.0f));
+
+    // Master
+    {
+        NR gainRange (-96.0f, 6.0f);
+        gainRange.setSkewForCentre (-6.0f);
+        layout.add (std::make_unique<juce::AudioParameterFloat> (
+            makePID ("masterGain"), "Master Gain", gainRange, 0.0f));
+    }
+
+    layout.add (std::make_unique<juce::AudioParameterInt> (
+        makePID ("polyphony"), "Polyphony", 1, kMaxVoices, kMaxVoices));
+
+    return layout;
+}
+
 //==============================================================================
 ResosynAudioProcessor::ResosynAudioProcessor()
-#ifndef JucePlugin_PreferredChannelConfigurations
-     : AudioProcessor (BusesProperties()
-                     #if ! JucePlugin_IsMidiEffect
-                      #if ! JucePlugin_IsSynth
-                       .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                      #endif
-                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
-                     #endif
-                       )
-#endif
+    : AudioProcessor (BusesProperties()
+                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+      apvts (*this, nullptr, "PARAMETERS", createParameterLayout())
 {
+    snapshotA.fill (1.0f);
+    snapshotB.fill (0.0f);
+
+    formatManager.registerBasicFormats();
 }
 
-ResosynAudioProcessor::~ResosynAudioProcessor()
-{
-}
+ResosynAudioProcessor::~ResosynAudioProcessor() {}
 
 //==============================================================================
-const juce::String ResosynAudioProcessor::getName() const
-{
-    return JucePlugin_Name;
-}
+const juce::String ResosynAudioProcessor::getName() const { return JucePlugin_Name; }
+bool ResosynAudioProcessor::acceptsMidi()     const { return true; }
+bool ResosynAudioProcessor::producesMidi()    const { return false; }
+bool ResosynAudioProcessor::isMidiEffect()    const { return false; }
+double ResosynAudioProcessor::getTailLengthSeconds() const { return 2.0; }
 
-bool ResosynAudioProcessor::acceptsMidi() const
-{
-   #if JucePlugin_WantsMidiInput
-    return true;
-   #else
-    return false;
-   #endif
-}
-
-bool ResosynAudioProcessor::producesMidi() const
-{
-   #if JucePlugin_ProducesMidiOutput
-    return true;
-   #else
-    return false;
-   #endif
-}
-
-bool ResosynAudioProcessor::isMidiEffect() const
-{
-   #if JucePlugin_IsMidiEffect
-    return true;
-   #else
-    return false;
-   #endif
-}
-
-double ResosynAudioProcessor::getTailLengthSeconds() const
-{
-    return 0.0;
-}
-
-int ResosynAudioProcessor::getNumPrograms()
-{
-    return 1;   // NB: some hosts don't cope very well if you tell them there are 0 programs,
-                // so this should be at least 1, even if you're not really implementing programs.
-}
-
-int ResosynAudioProcessor::getCurrentProgram()
-{
-    return 0;
-}
-
-void ResosynAudioProcessor::setCurrentProgram (int index)
-{
-}
-
-const juce::String ResosynAudioProcessor::getProgramName (int index)
-{
-    return {};
-}
-
-void ResosynAudioProcessor::changeProgramName (int index, const juce::String& newName)
-{
-}
+int  ResosynAudioProcessor::getNumPrograms()               { return 1; }
+int  ResosynAudioProcessor::getCurrentProgram()            { return 0; }
+void ResosynAudioProcessor::setCurrentProgram (int)        {}
+const juce::String ResosynAudioProcessor::getProgramName (int)  { return {}; }
+void ResosynAudioProcessor::changeProgramName (int, const juce::String&) {}
 
 //==============================================================================
 void ResosynAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    // Use this method as the place to do any pre-playback
-    // initialisation that you need..
+    voiceManager.prepare (sampleRate, samplesPerBlock);
+    smoothedMasterGain.reset (sampleRate, 0.05); // 50 ms smoothing
+    smoothedMasterGain.setCurrentAndTargetValue (
+        juce::Decibels::decibelsToGain (
+            apvts.getRawParameterValue ("masterGain")->load()));
 }
 
-void ResosynAudioProcessor::releaseResources()
-{
-    // When playback stops, you can use this as an opportunity to free up any
-    // spare memory, etc.
-}
+void ResosynAudioProcessor::releaseResources() {}
 
 #ifndef JucePlugin_PreferredChannelConfigurations
 bool ResosynAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-  #if JucePlugin_IsMidiEffect
-    juce::ignoreUnused (layouts);
-    return true;
-  #else
-    // This is the place where you check if the layout is supported.
-    // In this template code we only support mono or stereo.
-    // Some plugin hosts, such as certain GarageBand versions, will only
-    // load plugins that support stereo bus layouts.
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
-        return false;
-
-    // This checks if the input layout matches the output layout
-   #if ! JucePlugin_IsSynth
-    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
-        return false;
-   #endif
-
-    return true;
-  #endif
+    return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
 }
 #endif
 
-void ResosynAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
+//==============================================================================
+VoiceParameters ResosynAudioProcessor::buildVoiceParameters() const noexcept
+{
+    auto get = [this](const char* id) {
+        return apvts.getRawParameterValue (id)->load();
+    };
+
+    smoothedMasterGain; // ensure reference; actual advance happens below
+    float gainDb = get ("masterGain");
+
+    VoiceParameters p;
+    p.excitationMode       = (int)get ("excitationMode");
+    p.noiseColour          = (int)get ("noiseColour");
+    p.wavetablePosition    = get ("wavetablePosition");
+
+    p.overallQ             = get ("filterQ");
+    p.filterDetuneCents    = get ("filterDetune");
+    p.filterStretch        = get ("filterStretch");
+    p.filterSpread         = get ("filterSpread");
+
+    p.attackMs             = get ("envAttack");
+    p.decayMs              = get ("envDecay");
+    p.sustainLevel         = get ("envSustain");
+    p.releaseMs            = get ("envRelease");
+
+    p.timbreMorph          = get ("timbreMorph");
+    p.gainMorph            = get ("gainMorph");
+    p.noteMorphAmount      = get ("noteMorphAmount");
+    p.velocityMorphAmount  = get ("velocityMorphAmount");
+
+    p.masterGainLinear     = juce::Decibels::decibelsToGain (gainDb);
+    p.polyphony            = juce::jlimit (1, kMaxVoices, (int)get ("polyphony"));
+
+    p.snapshotA = snapshotA.data();
+    p.snapshotB = snapshotB.data();
+
+    p.samplerBuffer        = (samplerBuffer.getNumSamples() > 0) ? &samplerBuffer : nullptr;
+    p.samplerLoopEnable    = get ("samplerLoopEnable") > 0.5f;
+    p.samplerLoopStart     = get ("samplerLoopStart");
+    p.samplerLoopEnd       = get ("samplerLoopEnd");
+    p.samplerLoopPingPong  = (int)get ("samplerLoopType") == 1;
+    p.samplerLoopCrossfadeMs = get ("samplerLoopCrossfade");
+
+    return p;
+}
+
+void ResosynAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
+                                          juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels  = getTotalNumInputChannels();
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
-
-    // In case we have more outputs than inputs, this code clears any output
-    // channels that didn't contain input data, (because these aren't
-    // guaranteed to be empty - they may contain garbage).
-    // This is here to avoid people getting screaming feedback
-    // when they first compile a plugin, but obviously you don't need to keep
-    // this code if your algorithm always overwrites all the output channels.
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
-
-    // This is the place where you'd normally do the guts of your plugin's
-    // audio processing...
-    // Make sure to reset the state if your inner loop is processing
-    // the samples and the outer loop is handling the channels.
-    // Alternatively, you can process the samples with the channels
-    // interleaved by keeping the same state.
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
-    {
-        auto* channelData = buffer.getWritePointer (channel);
-
-        // ..do something to the data...
-    }
+    voiceManager.processBlock (buffer, midiMessages, buildVoiceParameters());
 }
 
 //==============================================================================
-bool ResosynAudioProcessor::hasEditor() const
-{
-    return true; // (change this to false if you choose to not supply an editor)
-}
-
+bool ResosynAudioProcessor::hasEditor() const { return true; }
 juce::AudioProcessorEditor* ResosynAudioProcessor::createEditor()
 {
     return new ResosynAudioProcessorEditor (*this);
@@ -172,19 +214,56 @@ juce::AudioProcessorEditor* ResosynAudioProcessor::createEditor()
 //==============================================================================
 void ResosynAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    // You should use this method to store your parameters in the memory block.
-    // You could do that either as raw data, or use the XML or ValueTree classes
-    // as intermediaries to make it easy to save and load complex data.
+    auto state = apvts.copyState();
+    auto xml = state.createXml();
+
+    // Append snapshots and sampler path as XML attributes on the root
+    auto snapA = xml->createNewChildElement ("SnapshotA");
+    auto snapB = xml->createNewChildElement ("SnapshotB");
+    for (int k = 0; k < kNumHarmonics; ++k)
+    {
+        snapA->setAttribute ("h" + juce::String (k), (double)snapshotA[(size_t)k]);
+        snapB->setAttribute ("h" + juce::String (k), (double)snapshotB[(size_t)k]);
+    }
+    xml->setAttribute ("samplerFilePath", samplerFilePath);
+
+    copyXmlToBinary (*xml, destData);
 }
 
 void ResosynAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    // You should use this method to restore your parameters from this memory block,
-    // whose contents will have been created by the getStateInformation() call.
+    auto xml = getXmlFromBinary (data, sizeInBytes);
+    if (xml == nullptr) return;
+
+    apvts.replaceState (juce::ValueTree::fromXml (*xml));
+
+    if (auto* snapA = xml->getChildByName ("SnapshotA"))
+        for (int k = 0; k < kNumHarmonics; ++k)
+            snapshotA[(size_t)k] = (float)snapA->getDoubleAttribute ("h" + juce::String (k), 1.0);
+
+    if (auto* snapB = xml->getChildByName ("SnapshotB"))
+        for (int k = 0; k < kNumHarmonics; ++k)
+            snapshotB[(size_t)k] = (float)snapB->getDoubleAttribute ("h" + juce::String (k), 0.0);
+
+    samplerFilePath = xml->getStringAttribute ("samplerFilePath");
+    if (samplerFilePath.isNotEmpty())
+        loadSamplerFile (juce::File (samplerFilePath));
+}
+
+void ResosynAudioProcessor::loadSamplerFile (const juce::File& file)
+{
+    if (!file.existsAsFile()) return;
+    std::unique_ptr<juce::AudioFormatReader> reader (
+        formatManager.createReaderFor (file));
+    if (reader == nullptr) return;
+
+    samplerBuffer.setSize ((int)reader->numChannels,
+                           (int)reader->lengthInSamples);
+    reader->read (&samplerBuffer, 0, (int)reader->lengthInSamples, 0, true, true);
+    samplerFilePath = file.getFullPathName();
 }
 
 //==============================================================================
-// This creates new instances of the plugin..
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new ResosynAudioProcessor();
