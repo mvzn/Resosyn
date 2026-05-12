@@ -52,6 +52,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout ResosynAudioProcessor::creat
         makePID ("filterOrder"), "Filter Order",
         juce::StringArray { "2", "4", "6", "8", "10", "12", "14", "16" }, 0));
 
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        makePID ("phaseAlign"), "Phase Align", false));
+
     {
         NR qRange (0.1f, 200.0f);
         qRange.setSkewForCentre (15.0f);
@@ -183,6 +186,7 @@ VoiceParameters ResosynAudioProcessor::buildVoiceParameters() const noexcept
 
     p.filterType           = (int)get ("filterType");
     p.filterStages         = (int)get ("filterOrder") + 1; // choice index 0–7 → stages 1–8
+    p.phaseAlign           = get ("phaseAlign") > 0.5f;    // stub — see DEVNOTES.md
     p.harmonicCount        = juce::jlimit (1, kNumHarmonics, (int)apvts.getRawParameterValue ("harmonicCount")->load());
     p.overallQ             = get ("filterQ");
     p.filterDetuneCents    = get ("filterDetune");

@@ -59,6 +59,10 @@ ResosynAudioProcessorEditor::ResosynAudioProcessorEditor (ResosynAudioProcessor&
     initSectionLabel (filterLabel, "FILTER");
     addAndMakeVisible (filterLabel);
 
+    phaseAlignButton.setButtonText ("Phase Align");
+    addAndMakeVisible (phaseAlignButton);
+    phaseAlignAttach = std::make_unique<APVTS::ButtonAttachment> (apvts, "phaseAlign", phaseAlignButton);
+
     filterTypeCombo.addItem ("Bandpass", 1);
     filterTypeCombo.addItem ("Peak",     2);
     addAndMakeVisible (filterTypeCombo);
@@ -214,9 +218,10 @@ void ResosynAudioProcessorEditor::resized()
     placeKnob (wtPosSlider, wtPosLabel, col0 + 90, row0 + 84);
 
     // ── Filter ────────────────────────────────────────────────────────────────
-    filterLabel.setBounds     (col1 + 6,        row0 + 4,  W - 12, 18);
-    filterTypeCombo.setBounds (col1 + 6,        row0 + 26, 116,    20);
-    filterOrderCombo.setBounds(col1 + 6 + 120,  row0 + 26, 120,    20);
+    filterLabel.setBounds      (col1 + 6,       row0 + 4,  120, 18);
+    phaseAlignButton.setBounds (col1 + 130,     row0 + 4,  112, 18);
+    filterTypeCombo.setBounds  (col1 + 6,       row0 + 26, 116, 20);
+    filterOrderCombo.setBounds (col1 + 6 + 120, row0 + 26, 120, 20);
     placeKnob (filterQSlider,       filterQLabel,       col1 + 10,  row0 + 52);
     placeKnob (filterDetuneSlider,  filterDetuneLabel,  col1 + 90,  row0 + 52);
     placeKnob (peakGainSlider,      peakGainLabel,      col1 + 170, row0 + 52);

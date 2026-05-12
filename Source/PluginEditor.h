@@ -25,8 +25,9 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   wtPosAttach;
 
     // ── Filter ───────────────────────────────────────────────────────────────
-    juce::Label    filterLabel;
-    juce::ComboBox filterTypeCombo, filterOrderCombo;
+    juce::Label        filterLabel;
+    juce::ToggleButton phaseAlignButton;
+    juce::ComboBox     filterTypeCombo, filterOrderCombo;
     juce::Slider   filterQSlider, filterDetuneSlider, filterStretchSlider, filterSpreadSlider;
     juce::Slider   peakGainSlider;
     juce::Label    filterQLabel,  filterDetuneLabel,  filterStretchLabel,  filterSpreadLabel;
@@ -34,6 +35,7 @@ private:
     juce::Slider   harmonicCountSlider;
     juce::Label    harmonicCountLabel;
 
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>   phaseAlignAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> filterTypeAttach, filterOrderAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
         filterQAttach, filterDetuneAttach, filterStretchAttach, filterSpreadAttach,
