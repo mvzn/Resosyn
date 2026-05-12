@@ -11,6 +11,7 @@ struct VoiceParameters
     float wavetablePosition;    // 0–1
 
     int   filterType;           // 0=Bandpass, 1=Peak
+    int   harmonicCount;        // 1–32, harmonics above this are silenced
 
     float overallQ;
     float filterDetuneCents;    // –100 to +100

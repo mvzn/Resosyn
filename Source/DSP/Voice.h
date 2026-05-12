@@ -58,6 +58,8 @@ public:
         float morphPos = computeMorphPos (p);
         float blendedGains[kNumHarmonics];
         computeBlendedGains (p, morphPos, blendedGains);
+        for (int k = p.harmonicCount; k < kNumHarmonics; ++k)
+            blendedGains[k] = 0.0f;
 
         static const float kZero32[kNumHarmonics] = {};
         static const float kOne32[kNumHarmonics]  = {

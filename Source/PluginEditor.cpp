@@ -76,11 +76,16 @@ ResosynAudioProcessorEditor::ResosynAudioProcessorEditor (ResosynAudioProcessor&
     initKnobLabel (filterStretchLabel, "Stretch");  addAndMakeVisible (filterStretchLabel);
     initKnobLabel (filterSpreadLabel,  "Spread");   addAndMakeVisible (filterSpreadLabel);
 
-    filterQAttach       = std::make_unique<APVTS::SliderAttachment> (apvts, "filterQ",       filterQSlider);
-    filterDetuneAttach  = std::make_unique<APVTS::SliderAttachment> (apvts, "filterDetune",  filterDetuneSlider);
-    peakGainAttach      = std::make_unique<APVTS::SliderAttachment> (apvts, "peakGainMaster",peakGainSlider);
-    filterStretchAttach = std::make_unique<APVTS::SliderAttachment> (apvts, "filterStretch", filterStretchSlider);
-    filterSpreadAttach  = std::make_unique<APVTS::SliderAttachment> (apvts, "filterSpread",  filterSpreadSlider);
+    initRotary (harmonicCountSlider); addAndMakeVisible (harmonicCountSlider);
+    harmonicCountSlider.setRange (1, kNumHarmonics, 1);
+    initKnobLabel (harmonicCountLabel, "Harmonics"); addAndMakeVisible (harmonicCountLabel);
+
+    filterQAttach        = std::make_unique<APVTS::SliderAttachment> (apvts, "filterQ",        filterQSlider);
+    filterDetuneAttach   = std::make_unique<APVTS::SliderAttachment> (apvts, "filterDetune",   filterDetuneSlider);
+    peakGainAttach       = std::make_unique<APVTS::SliderAttachment> (apvts, "peakGainMaster", peakGainSlider);
+    filterStretchAttach  = std::make_unique<APVTS::SliderAttachment> (apvts, "filterStretch",  filterStretchSlider);
+    filterSpreadAttach   = std::make_unique<APVTS::SliderAttachment> (apvts, "filterSpread",   filterSpreadSlider);
+    harmonicCountAttach  = std::make_unique<APVTS::SliderAttachment> (apvts, "harmonicCount",  harmonicCountSlider);
 
     // ── Envelope ──────────────────────────────────────────────────────────────
     initSectionLabel (envelopeLabel, "ENVELOPE");
@@ -209,8 +214,9 @@ void ResosynAudioProcessorEditor::resized()
     placeKnob (filterQSlider,       filterQLabel,       col1 + 10,  row0 + 52);
     placeKnob (filterDetuneSlider,  filterDetuneLabel,  col1 + 90,  row0 + 52);
     placeKnob (peakGainSlider,      peakGainLabel,      col1 + 170, row0 + 52);
-    placeKnob (filterStretchSlider, filterStretchLabel, col1 + 10,  row0 + 138);
-    placeKnob (filterSpreadSlider,  filterSpreadLabel,  col1 + 90,  row0 + 138);
+    placeKnob (filterStretchSlider,   filterStretchLabel,   col1 + 10,  row0 + 138);
+    placeKnob (filterSpreadSlider,    filterSpreadLabel,    col1 + 90,  row0 + 138);
+    placeKnob (harmonicCountSlider,   harmonicCountLabel,   col1 + 170, row0 + 138);
 
     // ── Envelope ──────────────────────────────────────────────────────────────
     envelopeLabel.setBounds (col2 + 6, row0 + 4, W - 12, 18);
