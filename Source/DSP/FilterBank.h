@@ -79,41 +79,46 @@ public:
     }
 
     // input[numSamples] → outL/outR accumulated (does not clear outputs first).
-    // gains: linear gain per harmonic [kSize].
+    // gains: linear gain per harmonic [kSize]. numStages: cascaded biquad stages (1–8).
     // spread: 0=centre, 1=full alternate L/R pan.
     void process (const float* input,
                   float*       outL,
                   float*       outR,
                   int          numSamples,
                   float        spread,
-                  const float* gains) noexcept
+                  const float* gains,
+                  int          numStages) noexcept
     {
         for (int k = 0; k < kSize; ++k)
         {
             const float b0k = b0[k], b2k = b2[k], a1k = a1[k], a2k = a2[k];
-            float s1k = s1[k], s2k = s2[k];
             const float gainK = gains[k];
 
-            // Alternating L/R panning by harmonic index scaled by spread
-            float pan   = spread * ((k & 1) ? 0.5f : -0.5f); // –0.5 to +0.5
+            float pan   = spread * ((k & 1) ? 0.5f : -0.5f);
             float panL  = juce::jlimit (0.0f, 1.0f, 0.5f - pan);
             float panR  = juce::jlimit (0.0f, 1.0f, 0.5f + pan);
             float gainL = gainK * std::sqrt (panL);
             float gainR = gainK * std::sqrt (panR);
 
+            // Load all stage states into locals for this harmonic
+            float st1[8], st2[8];
+            for (int st = 0; st < numStages; ++st) { st1[st] = s1[st][k]; st2[st] = s2[st][k]; }
+
             for (int i = 0; i < numSamples; ++i)
             {
                 float x = input[i];
-                // Direct Form II Transposed, b1=0 for bandpass
-                float y = b0k * x + s1k;
-                s1k = s2k - a1k * y;
-                s2k = b2k * x - a2k * y;
-                outL[i] += y * gainL;
-                outR[i] += y * gainR;
+                for (int st = 0; st < numStages; ++st)
+                {
+                    float y = b0k * x + st1[st];
+                    st1[st] = st2[st] - a1k * y;
+                    st2[st] = b2k * x - a2k * y;
+                    x = y;
+                }
+                outL[i] += x * gainL;
+                outR[i] += x * gainR;
             }
 
-            s1[k] = s1k;
-            s2[k] = s2k;
+            for (int st = 0; st < numStages; ++st) { s1[st][k] = st1[st]; s2[st][k] = st2[st]; }
         }
     }
 
@@ -124,12 +129,12 @@ public:
                       float*       outR,
                       int          numSamples,
                       float        spread,
-                      const float* gains) noexcept
+                      const float* gains,
+                      int          numStages) noexcept
     {
         for (int k = 0; k < kSize; ++k)
         {
             const float b0k = b0[k], b2k = b2[k], a1k = a1[k], a2k = a2[k];
-            float s1k = s1[k], s2k = s2[k];
             const float gainK = gains[k];
 
             float pan   = spread * ((k & 1) ? 0.5f : -0.5f);
@@ -138,18 +143,24 @@ public:
             float gainL = gainK * std::sqrt (panL);
             float gainR = gainK * std::sqrt (panR);
 
+            float st1[8], st2[8];
+            for (int st = 0; st < numStages; ++st) { st1[st] = s1[st][k]; st2[st] = s2[st][k]; }
+
             for (int i = 0; i < numSamples; ++i)
             {
                 float x = input[i];
-                float y = b0k * x + s1k;
-                s1k = a1k * (x - y) + s2k;  // b1=a1 for peak EQ
-                s2k = b2k * x - a2k * y;
-                outL[i] += y * gainL;
-                outR[i] += y * gainR;
+                for (int st = 0; st < numStages; ++st)
+                {
+                    float y = b0k * x + st1[st];
+                    st1[st] = a1k * (x - y) + st2[st];  // b1=a1 for peak EQ
+                    st2[st] = b2k * x - a2k * y;
+                    x = y;
+                }
+                outL[i] += x * gainL;
+                outR[i] += x * gainR;
             }
 
-            s1[k] = s1k;
-            s2[k] = s2k;
+            for (int st = 0; st < numStages; ++st) { s1[st][k] = st1[st]; s2[st][k] = st2[st]; }
         }
     }
 
@@ -164,7 +175,7 @@ private:
     // SoA: group coefficients by field, not by filter (enables AVX)
     float b0[kSize], b2[kSize]; // b1 = 0 for bandpass
     float a1[kSize], a2[kSize];
-    float s1[kSize], s2[kSize]; // per-harmonic biquad state
+    float s1[8][kSize], s2[8][kSize]; // per-stage, per-harmonic biquad state
 
     double sr = 44100.0;
 };

@@ -26,7 +26,7 @@ private:
 
     // ── Filter ───────────────────────────────────────────────────────────────
     juce::Label    filterLabel;
-    juce::ComboBox filterTypeCombo;
+    juce::ComboBox filterTypeCombo, filterOrderCombo;
     juce::Slider   filterQSlider, filterDetuneSlider, filterStretchSlider, filterSpreadSlider;
     juce::Slider   peakGainSlider;
     juce::Label    filterQLabel,  filterDetuneLabel,  filterStretchLabel,  filterSpreadLabel;
@@ -34,7 +34,7 @@ private:
     juce::Slider   harmonicCountSlider;
     juce::Label    harmonicCountLabel;
 
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> filterTypeAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> filterTypeAttach, filterOrderAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
         filterQAttach, filterDetuneAttach, filterStretchAttach, filterSpreadAttach,
         peakGainAttach, harmonicCountAttach;

@@ -64,6 +64,11 @@ ResosynAudioProcessorEditor::ResosynAudioProcessorEditor (ResosynAudioProcessor&
     addAndMakeVisible (filterTypeCombo);
     filterTypeAttach = std::make_unique<APVTS::ComboBoxAttachment> (apvts, "filterType", filterTypeCombo);
 
+    for (int ord : { 2, 4, 6, 8, 10, 12, 14, 16 })
+        filterOrderCombo.addItem (juce::String (ord), ord / 2); // itemId must be > 0
+    addAndMakeVisible (filterOrderCombo);
+    filterOrderAttach = std::make_unique<APVTS::ComboBoxAttachment> (apvts, "filterOrder", filterOrderCombo);
+
     initRotary (filterQSlider);       addAndMakeVisible (filterQSlider);
     initRotary (filterDetuneSlider);  addAndMakeVisible (filterDetuneSlider);
     initRotary (peakGainSlider);      addAndMakeVisible (peakGainSlider);
@@ -209,8 +214,9 @@ void ResosynAudioProcessorEditor::resized()
     placeKnob (wtPosSlider, wtPosLabel, col0 + 90, row0 + 84);
 
     // ── Filter ────────────────────────────────────────────────────────────────
-    filterLabel.setBounds    (col1 + 6,  row0 + 4,  W - 12, 18);
-    filterTypeCombo.setBounds(col1 + 6,  row0 + 26, W - 12, 20);
+    filterLabel.setBounds     (col1 + 6,        row0 + 4,  W - 12, 18);
+    filterTypeCombo.setBounds (col1 + 6,        row0 + 26, 116,    20);
+    filterOrderCombo.setBounds(col1 + 6 + 120,  row0 + 26, 120,    20);
     placeKnob (filterQSlider,       filterQLabel,       col1 + 10,  row0 + 52);
     placeKnob (filterDetuneSlider,  filterDetuneLabel,  col1 + 90,  row0 + 52);
     placeKnob (peakGainSlider,      peakGainLabel,      col1 + 170, row0 + 52);

@@ -11,6 +11,7 @@ struct VoiceParameters
     float wavetablePosition;    // 0–1
 
     int   filterType;           // 0=Bandpass, 1=Peak
+    int   filterStages;         // 1–8, cascaded biquad stages (order = stages*2)
     int   harmonicCount;        // 1–32, harmonics above this are silenced
 
     float overallQ;

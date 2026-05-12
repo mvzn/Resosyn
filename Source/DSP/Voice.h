@@ -99,9 +99,9 @@ public:
             std::memset (tmpR, 0, sizeof (float) * (size_t)n);
 
             if (p.filterType == 1)
-                filterBank.processPeak (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains);
+                filterBank.processPeak (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains, p.filterStages);
             else
-                filterBank.process (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains);
+                filterBank.process (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains, p.filterStages);
 
             float masterGain = p.masterGainLinear;
             for (int i = 0; i < n; ++i)
