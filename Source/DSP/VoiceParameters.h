@@ -10,10 +10,13 @@ struct VoiceParameters
     int   noiseColour;          // 0=White, 1=Pink, 2=Brown
     float wavetablePosition;    // 0–1
 
+    int   filterType;           // 0=Bandpass, 1=Peak
+
     float overallQ;
     float filterDetuneCents;    // –100 to +100
     float filterStretch;        // 0–1
     float filterSpread;         // 0–1
+    float peakGainMasterDB;     // –96 to +46 dB, used only in Peak mode
 
     float attackMs;
     float decayMs;

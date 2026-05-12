@@ -44,6 +44,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout ResosynAudioProcessor::creat
         NR (0.0f, 500.0f), 0.0f));
 
     // Filterbank
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        makePID ("filterType"), "Filter Type",
+        juce::StringArray { "Bandpass", "Peak" }, 0));
+
     {
         NR qRange (0.1f, 200.0f);
         qRange.setSkewForCentre (15.0f);
@@ -60,6 +64,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout ResosynAudioProcessor::creat
 
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         makePID ("filterSpread"), "Spread", NR (0.0f, 1.0f), 0.0f));
+
+    // 0=neutral (-96 dB), 100=+46 dB; linear mapping applied in buildVoiceParameters
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        makePID ("peakGainMaster"), "Peak Gain", NR (0.0f, 100.0f), 0.0f));
 
     // Envelope
     {
@@ -166,10 +174,13 @@ VoiceParameters ResosynAudioProcessor::buildVoiceParameters() const noexcept
     p.noiseColour          = (int)get ("noiseColour");
     p.wavetablePosition    = get ("wavetablePosition");
 
+    p.filterType           = (int)get ("filterType");
     p.overallQ             = get ("filterQ");
     p.filterDetuneCents    = get ("filterDetune");
     p.filterStretch        = get ("filterStretch");
     p.filterSpread         = get ("filterSpread");
+    // 0→-96 dB (neutral/silent), 100→+46 dB
+    p.peakGainMasterDB     = -96.0f + 142.0f * (get ("peakGainMaster") / 100.0f);
 
     p.attackMs             = get ("envAttack");
     p.decayMs              = get ("envDecay");

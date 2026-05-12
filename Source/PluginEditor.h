@@ -25,12 +25,17 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   wtPosAttach;
 
     // ── Filter ───────────────────────────────────────────────────────────────
-    juce::Label  filterLabel;
-    juce::Slider filterQSlider, filterDetuneSlider, filterStretchSlider, filterSpreadSlider;
-    juce::Label  filterQLabel,  filterDetuneLabel,  filterStretchLabel,  filterSpreadLabel;
+    juce::Label    filterLabel;
+    juce::ComboBox filterTypeCombo;
+    juce::Slider   filterQSlider, filterDetuneSlider, filterStretchSlider, filterSpreadSlider;
+    juce::Slider   peakGainSlider;
+    juce::Label    filterQLabel,  filterDetuneLabel,  filterStretchLabel,  filterSpreadLabel;
+    juce::Label    peakGainLabel;
 
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> filterTypeAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
-        filterQAttach, filterDetuneAttach, filterStretchAttach, filterSpreadAttach;
+        filterQAttach, filterDetuneAttach, filterStretchAttach, filterSpreadAttach,
+        peakGainAttach;
 
     // ── Envelope ─────────────────────────────────────────────────────────────
     juce::Label  envelopeLabel;

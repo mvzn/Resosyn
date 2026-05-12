@@ -84,7 +84,8 @@ public:
             int n = std::min (kSubBlock, numSamples - offset);
 
             filterBank.updateCoefficients (fundamental, p.filterStretch,
-                                           p.overallQ, kZero32, kZero32, kOne32);
+                                           p.overallQ, kZero32, kZero32, kOne32,
+                                           p.filterType, p.peakGainMasterDB);
 
             generateExcitation (excBuf, n, p);
 
@@ -95,7 +96,10 @@ public:
             std::memset (tmpL, 0, sizeof (float) * (size_t)n);
             std::memset (tmpR, 0, sizeof (float) * (size_t)n);
 
-            filterBank.process (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains);
+            if (p.filterType == 1)
+                filterBank.processPeak (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains);
+            else
+                filterBank.process (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains);
 
             float masterGain = p.masterGainLinear;
             for (int i = 0; i < n; ++i)

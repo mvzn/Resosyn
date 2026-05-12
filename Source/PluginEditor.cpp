@@ -59,18 +59,26 @@ ResosynAudioProcessorEditor::ResosynAudioProcessorEditor (ResosynAudioProcessor&
     initSectionLabel (filterLabel, "FILTER");
     addAndMakeVisible (filterLabel);
 
-    initRotary (filterQSlider);      addAndMakeVisible (filterQSlider);
-    initRotary (filterDetuneSlider); addAndMakeVisible (filterDetuneSlider);
-    initRotary (filterStretchSlider);addAndMakeVisible (filterStretchSlider);
-    initRotary (filterSpreadSlider); addAndMakeVisible (filterSpreadSlider);
+    filterTypeCombo.addItem ("Bandpass", 1);
+    filterTypeCombo.addItem ("Peak",     2);
+    addAndMakeVisible (filterTypeCombo);
+    filterTypeAttach = std::make_unique<APVTS::ComboBoxAttachment> (apvts, "filterType", filterTypeCombo);
 
-    initKnobLabel (filterQLabel,      "Q");       addAndMakeVisible (filterQLabel);
-    initKnobLabel (filterDetuneLabel, "Detune");  addAndMakeVisible (filterDetuneLabel);
-    initKnobLabel (filterStretchLabel,"Stretch"); addAndMakeVisible (filterStretchLabel);
-    initKnobLabel (filterSpreadLabel, "Spread");  addAndMakeVisible (filterSpreadLabel);
+    initRotary (filterQSlider);       addAndMakeVisible (filterQSlider);
+    initRotary (filterDetuneSlider);  addAndMakeVisible (filterDetuneSlider);
+    initRotary (peakGainSlider);      addAndMakeVisible (peakGainSlider);
+    initRotary (filterStretchSlider); addAndMakeVisible (filterStretchSlider);
+    initRotary (filterSpreadSlider);  addAndMakeVisible (filterSpreadSlider);
+
+    initKnobLabel (filterQLabel,       "Q");        addAndMakeVisible (filterQLabel);
+    initKnobLabel (filterDetuneLabel,  "Detune");   addAndMakeVisible (filterDetuneLabel);
+    initKnobLabel (peakGainLabel,      "Pk Gain");  addAndMakeVisible (peakGainLabel);
+    initKnobLabel (filterStretchLabel, "Stretch");  addAndMakeVisible (filterStretchLabel);
+    initKnobLabel (filterSpreadLabel,  "Spread");   addAndMakeVisible (filterSpreadLabel);
 
     filterQAttach       = std::make_unique<APVTS::SliderAttachment> (apvts, "filterQ",       filterQSlider);
     filterDetuneAttach  = std::make_unique<APVTS::SliderAttachment> (apvts, "filterDetune",  filterDetuneSlider);
+    peakGainAttach      = std::make_unique<APVTS::SliderAttachment> (apvts, "peakGainMaster",peakGainSlider);
     filterStretchAttach = std::make_unique<APVTS::SliderAttachment> (apvts, "filterStretch", filterStretchSlider);
     filterSpreadAttach  = std::make_unique<APVTS::SliderAttachment> (apvts, "filterSpread",  filterSpreadSlider);
 
@@ -196,11 +204,13 @@ void ResosynAudioProcessorEditor::resized()
     placeKnob (wtPosSlider, wtPosLabel, col0 + 90, row0 + 84);
 
     // ── Filter ────────────────────────────────────────────────────────────────
-    filterLabel.setBounds (col1 + 6, row0 + 4, W - 12, 18);
-    placeKnob (filterQSlider,       filterQLabel,       col1 + 10, row0 + 26);
-    placeKnob (filterDetuneSlider,  filterDetuneLabel,  col1 + 90, row0 + 26);
-    placeKnob (filterStretchSlider, filterStretchLabel, col1 + 10, row0 + 120);
-    placeKnob (filterSpreadSlider,  filterSpreadLabel,  col1 + 90, row0 + 120);
+    filterLabel.setBounds    (col1 + 6,  row0 + 4,  W - 12, 18);
+    filterTypeCombo.setBounds(col1 + 6,  row0 + 26, W - 12, 20);
+    placeKnob (filterQSlider,       filterQLabel,       col1 + 10,  row0 + 52);
+    placeKnob (filterDetuneSlider,  filterDetuneLabel,  col1 + 90,  row0 + 52);
+    placeKnob (peakGainSlider,      peakGainLabel,      col1 + 170, row0 + 52);
+    placeKnob (filterStretchSlider, filterStretchLabel, col1 + 10,  row0 + 138);
+    placeKnob (filterSpreadSlider,  filterSpreadLabel,  col1 + 90,  row0 + 138);
 
     // ── Envelope ──────────────────────────────────────────────────────────────
     envelopeLabel.setBounds (col2 + 6, row0 + 4, W - 12, 18);

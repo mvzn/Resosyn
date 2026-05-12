@@ -23,15 +23,19 @@ public:
 
     // Called at subblock cadence (~every 32 samples), not per-sample.
     // freqOffsets in semitones, detunes in cents, qMults per-harmonic Q multipliers.
+    // filterType: 0=Bandpass, 1=Peak EQ. peakGainDB used only when filterType==1.
     void updateCoefficients (float fundamental,
                              float stretch,
                              float overallQ,
                              const float* freqOffsetsSemitones,
                              const float* detunesCents,
-                             const float* qMults) noexcept
+                             const float* qMults,
+                             int   filterType  = 0,
+                             float peakGainDB  = 0.0f) noexcept
     {
         const float twoPiOverSr = 2.0f * juce::MathConstants<float>::pi / (float)sr;
         const float nyquist     = (float)(sr * 0.49);
+        const float A           = std::pow (10.0f, peakGainDB / 40.0f); // peak EQ amplitude
 
         for (int k = 0; k < kSize; ++k)
         {
@@ -52,12 +56,25 @@ public:
 
             float Q     = juce::jlimit (0.1f, 200.0f, overallQ * qMults[k]);
             float alpha = sinW0 / (2.0f * Q);
-            float a0inv = 1.0f / (1.0f + alpha);
 
-            b0[k] =  alpha * a0inv;
-            b2[k] = -alpha * a0inv;
-            a1[k] = -2.0f * cosW0 * a0inv;
-            a2[k] = (1.0f - alpha) * a0inv;
+            if (filterType == 1)
+            {
+                // Peaking EQ (Audio EQ Cookbook). b1=a1 property holds.
+                float a0inv = 1.0f / (1.0f + alpha / A);
+                b0[k] = (1.0f + alpha * A) * a0inv;
+                b2[k] = (1.0f - alpha * A) * a0inv;
+                a1[k] = -2.0f * cosW0 * a0inv;
+                a2[k] = (1.0f - alpha / A) * a0inv;
+            }
+            else
+            {
+                // Bandpass (b1=0 property holds)
+                float a0inv = 1.0f / (1.0f + alpha);
+                b0[k] =  alpha * a0inv;
+                b2[k] = -alpha * a0inv;
+                a1[k] = -2.0f * cosW0 * a0inv;
+                a2[k] = (1.0f - alpha) * a0inv;
+            }
         }
     }
 
@@ -90,6 +107,42 @@ public:
                 // Direct Form II Transposed, b1=0 for bandpass
                 float y = b0k * x + s1k;
                 s1k = s2k - a1k * y;
+                s2k = b2k * x - a2k * y;
+                outL[i] += y * gainL;
+                outR[i] += y * gainR;
+            }
+
+            s1[k] = s1k;
+            s2[k] = s2k;
+        }
+    }
+
+    // Peak EQ process path. Uses b1=a1 property: s1 update differs from bandpass.
+    // Does not clear outputs first; call instead of process() when filterType==1.
+    void processPeak (const float* input,
+                      float*       outL,
+                      float*       outR,
+                      int          numSamples,
+                      float        spread,
+                      const float* gains) noexcept
+    {
+        for (int k = 0; k < kSize; ++k)
+        {
+            const float b0k = b0[k], b2k = b2[k], a1k = a1[k], a2k = a2[k];
+            float s1k = s1[k], s2k = s2[k];
+            const float gainK = gains[k];
+
+            float pan   = spread * ((k & 1) ? 0.5f : -0.5f);
+            float panL  = juce::jlimit (0.0f, 1.0f, 0.5f - pan);
+            float panR  = juce::jlimit (0.0f, 1.0f, 0.5f + pan);
+            float gainL = gainK * std::sqrt (panL);
+            float gainR = gainK * std::sqrt (panR);
+
+            for (int i = 0; i < numSamples; ++i)
+            {
+                float x = input[i];
+                float y = b0k * x + s1k;
+                s1k = a1k * (x - y) + s2k;  // b1=a1 for peak EQ
                 s2k = b2k * x - a2k * y;
                 outL[i] += y * gainL;
                 outR[i] += y * gainR;
