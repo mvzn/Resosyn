@@ -111,7 +111,6 @@ public:
 
         for (int k = 0; k < kSize; ++k)
         {
-            // Per-sample coefficient deltas for linear interpolation
             const float db0 = (b0[k] - prevB0[k]) * invN;
             const float db2 = (b2[k] - prevB2[k]) * invN;
             const float da1 = (a1[k] - prevA1[k]) * invN;
@@ -146,6 +145,8 @@ public:
             }
 
             for (int st = 0; st < numStages; ++st) { s1[st][k] = st1[st]; s2[st][k] = st2[st]; }
+            // Zero dormant stages so stale state can't inject on order increase.
+            for (int st = numStages; st < 8; ++st) { s1[st][k] = s2[st][k] = 0.0f; }
         }
     }
 
@@ -196,6 +197,7 @@ public:
             }
 
             for (int st = 0; st < numStages; ++st) { s1[st][k] = st1[st]; s2[st][k] = st2[st]; }
+            for (int st = numStages; st < 8; ++st) { s1[st][k] = s2[st][k] = 0.0f; }
         }
     }
 

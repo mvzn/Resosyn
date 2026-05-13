@@ -2,7 +2,7 @@
 #include <JuceHeader.h>
 
 static constexpr int kNumHarmonics    = 32;
-static constexpr int kMaxVoices       = 8;
+static constexpr int kMaxVoices       = 12;
 static constexpr int kTotalVoiceSlots = kMaxVoices * 2; // polyphony slots + ghost release slots
 
 struct VoiceParameters
