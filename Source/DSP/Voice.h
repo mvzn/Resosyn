@@ -8,6 +8,9 @@
 class Voice
 {
 public:
+    // Fade-out applied to a stolen voice before the new note fires.
+    static constexpr int kStealFadeLen = 128;
+
     void prepare (double sampleRate, int maxBlockSize)
     {
         sr = sampleRate;
@@ -25,24 +28,25 @@ public:
 
     void noteOn (int note, float vel, uint64_t age)
     {
-        midiNote    = note;
-        velocity    = vel;
-        startAge    = age;
-        active      = true;
-        samplerPhase          = 0.0;
-        samplerPingPongFwd    = true;
-
-        envelope.reset();
-        envelope.noteOn();
-        filterBank.flushState();
-        wavetableOsc.reset();
-        wavetableOsc.setFrequency (midiNoteToHz (note));
+        if (active)
+        {
+            // Voice is being stolen: fade out current note, queue the new one.
+            pendingNote     = note;
+            pendingVelocity = vel;
+            pendingAge      = age;
+            hasPendingNote  = true;
+            stealFadeRemain = kStealFadeLen;
+        }
+        else
+        {
+            startNote (note, vel, age);
+        }
     }
 
     void noteOff() noexcept { envelope.noteOff(); }
 
-    bool isActive()  const noexcept { return active; }
-    int  getMidiNote() const noexcept { return midiNote; }
+    bool     isActive()    const noexcept { return active; }
+    int      getMidiNote() const noexcept { return midiNote; }
     uint64_t getStartAge() const noexcept { return startAge; }
 
     // Adds voice audio to buffer[startSample..startSample+numSamples].
@@ -55,22 +59,15 @@ public:
 
         updateEnvelopeParams (p);
 
-        float morphPos = computeMorphPos (p);
-        float blendedGains[kNumHarmonics];
-        computeBlendedGains (p, morphPos, blendedGains);
-        for (int k = p.harmonicCount; k < kNumHarmonics; ++k)
-            blendedGains[k] = 0.0f;
+        float fundamental = midiNoteToHz (midiNote);
+        if (p.filterDetuneCents != 0.0f)
+            fundamental *= std::pow (2.0f, p.filterDetuneCents / 1200.0f);
 
         static const float kZero32[kNumHarmonics] = {};
         static const float kOne32[kNumHarmonics]  = {
             1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
             1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
         };
-
-        float fundamental = midiNoteToHz (midiNote);
-        // Apply global detune
-        if (p.filterDetuneCents != 0.0f)
-            fundamental *= std::pow (2.0f, p.filterDetuneCents / 1200.0f);
 
         float* excBuf = excitationBuf.getWritePointer (0);
         float* outL   = output.getWritePointer (0) + startSample;
@@ -85,13 +82,19 @@ public:
         {
             int n = std::min (kSubBlock, numSamples - offset);
 
+            // Recompute blended gains every subblock so morph automation is responsive.
+            float blendedGains[kNumHarmonics];
+            float morphPos = computeMorphPos (p);
+            computeBlendedGains (p, morphPos, blendedGains);
+            for (int k = p.harmonicCount; k < kNumHarmonics; ++k)
+                blendedGains[k] = 0.0f;
+
             filterBank.updateCoefficients (fundamental, p.filterStretch,
                                            p.overallQ, kZero32, kZero32, kOne32,
                                            p.filterType, p.peakGainMasterDB);
 
             generateExcitation (excBuf, n, p);
 
-            // Apply envelope per-sample into excitation
             for (int i = 0; i < n; ++i)
                 excBuf[i] *= envelope.getNextSample();
 
@@ -103,17 +106,38 @@ public:
             else
                 filterBank.process (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains, p.filterStages);
 
-            float masterGain = p.masterGainLinear;
+            // Apply steal fade — ramp down over kStealFadeLen samples before firing pending note.
+            if (stealFadeRemain > 0)
+            {
+                for (int i = 0; i < n; ++i)
+                {
+                    float gain = (float)stealFadeRemain / (float)kStealFadeLen;
+                    tmpL[i] *= gain;
+                    tmpR[i] *= gain;
+
+                    if (--stealFadeRemain == 0)
+                    {
+                        if (hasPendingNote)
+                            startNote (pendingNote, pendingVelocity, pendingAge);
+
+                        // Zero samples after the transition point this subblock.
+                        for (int j = i + 1; j < n; ++j)
+                            tmpL[j] = tmpR[j] = 0.0f;
+                        break;
+                    }
+                }
+            }
+
             for (int i = 0; i < n; ++i)
             {
-                outL[offset + i] += tmpL[i] * masterGain;
-                outR[offset + i] += tmpR[i] * masterGain;
+                outL[offset + i] += tmpL[i];
+                outR[offset + i] += tmpR[i];
             }
 
             offset += n;
         }
 
-        if (!envelope.isActive())
+        if (!envelope.isActive() && stealFadeRemain == 0 && !hasPendingNote)
         {
             active = false;
             filterBank.flushState();
@@ -121,13 +145,11 @@ public:
     }
 
 private:
-    // DSP components
-    FilterBank         filterBank;
-    juce::ADSR         envelope;
-    NoiseGenerator     noiseGen;
+    FilterBank          filterBank;
+    juce::ADSR          envelope;
+    NoiseGenerator      noiseGen;
     WavetableOscillator wavetableOsc;
 
-    // Voice state
     int      midiNote  = -1;
     float    velocity  = 0.0f;
     uint64_t startAge  = 0;
@@ -135,16 +157,40 @@ private:
     double   sr        = 44100.0;
 
     // Sampler playhead
-    double samplerPhase      = 0.0;
-    bool   samplerPingPongFwd= true;
+    double samplerPhase       = 0.0;
+    bool   samplerPingPongFwd = true;
 
-    // Pre-allocated scratch buffers
+    // Steal fade state
+    int      stealFadeRemain  = 0;
+    bool     hasPendingNote   = false;
+    int      pendingNote      = -1;
+    float    pendingVelocity  = 0.0f;
+    uint64_t pendingAge       = 0;
+
     juce::AudioBuffer<float> excitationBuf;
     juce::AudioBuffer<float> tempL, tempR;
 
     static float midiNoteToHz (int note) noexcept
     {
         return 440.0f * std::pow (2.0f, (note - 69) / 12.0f);
+    }
+
+    void startNote (int note, float vel, uint64_t age) noexcept
+    {
+        midiNote          = note;
+        velocity          = vel;
+        startAge          = age;
+        active            = true;
+        samplerPhase      = 0.0;
+        samplerPingPongFwd= true;
+        hasPendingNote    = false;
+        stealFadeRemain   = 0;
+
+        envelope.reset();
+        envelope.noteOn();
+        filterBank.flushState();
+        wavetableOsc.reset();
+        wavetableOsc.setFrequency (midiNoteToHz (note));
     }
 
     void updateEnvelopeParams (const VoiceParameters& p) noexcept
@@ -170,7 +216,6 @@ private:
                               float morphPos,
                               float* gains) const noexcept
     {
-        // Timbre morph: blend relative spectral shapes A and B
         float aSum = 0.0f, bSum = 0.0f;
         for (int k = 0; k < kNumHarmonics; ++k)
         {
@@ -180,19 +225,16 @@ private:
         float aNorm = (aSum > 0.0f) ? 1.0f / aSum : 0.0f;
         float bNorm = (bSum > 0.0f) ? 1.0f / bSum : 0.0f;
 
-        // Gain morph: blend overall level
         float gainMorphPos = juce::jlimit (0.0f, 1.0f, p.gainMorph);
         float levelA = aSum * (float)kNumHarmonics;
         float levelB = bSum * (float)kNumHarmonics;
-        float overallLevel = levelA + gainMorphPos * (levelB - levelA);
-        overallLevel /= (float)kNumHarmonics; // normalize to per-harmonic scale
+        float overallLevel = (levelA + gainMorphPos * (levelB - levelA)) / (float)kNumHarmonics;
 
         for (int k = 0; k < kNumHarmonics; ++k)
         {
             float shapeA = p.snapshotA[k] * aNorm;
             float shapeB = p.snapshotB[k] * bNorm;
-            float shape  = shapeA + morphPos * (shapeB - shapeA);
-            gains[k] = shape * overallLevel;
+            gains[k] = (shapeA + morphPos * (shapeB - shapeA)) * overallLevel;
         }
     }
 
@@ -228,17 +270,24 @@ private:
         const int totalSamples = sb.getNumSamples();
         const int numCh        = sb.getNumChannels();
 
-        int loopStart = (int)(p.samplerLoopStart * (float)totalSamples);
-        int loopEnd   = (int)(p.samplerLoopEnd   * (float)totalSamples);
-        loopStart = juce::jlimit (0, totalSamples - 1, loopStart);
-        loopEnd   = juce::jlimit (loopStart + 1, totalSamples, loopEnd);
+        int loopStart = juce::jlimit (0, totalSamples - 1, (int)(p.samplerLoopStart * (float)totalSamples));
+        int loopEnd   = juce::jlimit (loopStart + 1, totalSamples, (int)(p.samplerLoopEnd * (float)totalSamples));
 
         for (int i = 0; i < n; ++i)
         {
-            int pos = juce::jlimit (0, totalSamples - 1, (int)samplerPhase);
-            float sample = sb.getSample (0, pos);
-            if (numCh > 1) sample = (sample + sb.getSample (1, pos)) * 0.5f;
-            buf[i] = sample;
+            // Linear interpolation between adjacent samples
+            int   pos0 = juce::jlimit (0, totalSamples - 1, (int)samplerPhase);
+            int   pos1 = std::min (pos0 + 1, totalSamples - 1);
+            float frac = (float)(samplerPhase - (double)pos0);
+
+            float s0 = sb.getSample (0, pos0);
+            float s1 = sb.getSample (0, pos1);
+            if (numCh > 1)
+            {
+                s0 = (s0 + sb.getSample (1, pos0)) * 0.5f;
+                s1 = (s1 + sb.getSample (1, pos1)) * 0.5f;
+            }
+            buf[i] = s0 + frac * (s1 - s0);
 
             if (samplerPingPongFwd)
             {

@@ -6,6 +6,8 @@
 // 32-harmonic biquad bandpass bank.
 // SoA memory layout required for future AVX SIMD (4 passes of 8-wide).
 // Coefficients must be updated every 16–32 samples (subblock cadence).
+// Coefficients are linearly interpolated across each subblock to prevent
+// zipper noise from parameter changes.
 class FilterBank
 {
 public:
@@ -14,11 +16,16 @@ public:
     void prepare (double sampleRate) noexcept
     {
         sr = sampleRate;
+        coeffsInitialized = false;
         flushState();
-        std::memset (&b0, 0, sizeof (b0));
-        std::memset (&b2, 0, sizeof (b2));
-        std::memset (&a1, 0, sizeof (a1));
-        std::memset (&a2, 0, sizeof (a2));
+        std::memset (b0,     0, sizeof (b0));
+        std::memset (b2,     0, sizeof (b2));
+        std::memset (a1,     0, sizeof (a1));
+        std::memset (a2,     0, sizeof (a2));
+        std::memset (prevB0, 0, sizeof (prevB0));
+        std::memset (prevB2, 0, sizeof (prevB2));
+        std::memset (prevA1, 0, sizeof (prevA1));
+        std::memset (prevA2, 0, sizeof (prevA2));
     }
 
     // Called at subblock cadence (~every 32 samples), not per-sample.
@@ -33,17 +40,21 @@ public:
                              int   filterType  = 0,
                              float peakGainDB  = 0.0f) noexcept
     {
+        // Save current as previous interpolation start point
+        std::memcpy (prevB0, b0, sizeof (b0));
+        std::memcpy (prevB2, b2, sizeof (b2));
+        std::memcpy (prevA1, a1, sizeof (a1));
+        std::memcpy (prevA2, a2, sizeof (a2));
+
         const float twoPiOverSr = 2.0f * juce::MathConstants<float>::pi / (float)sr;
         const float nyquist     = (float)(sr * 0.49);
-        const float A           = std::pow (10.0f, peakGainDB / 40.0f); // peak EQ amplitude
+        const float A           = std::pow (10.0f, peakGainDB / 40.0f);
 
         for (int k = 0; k < kSize; ++k)
         {
             int n = k + 1;
-            // Inharmonicity: f_n = n * f0 * (1 + stretch * n^2)
             float fn = (float)n * fundamental * (1.0f + stretch * (float)(n * n));
 
-            // Per-harmonic tuning
             float totalCents = freqOffsetsSemitones[k] * 100.0f + detunesCents[k];
             if (totalCents != 0.0f)
                 fn *= std::pow (2.0f, totalCents / 1200.0f);
@@ -59,7 +70,6 @@ public:
 
             if (filterType == 1)
             {
-                // Peaking EQ (Audio EQ Cookbook). b1=a1 property holds.
                 float a0inv = 1.0f / (1.0f + alpha / A);
                 b0[k] = (1.0f + alpha * A) * a0inv;
                 b2[k] = (1.0f - alpha * A) * a0inv;
@@ -68,7 +78,6 @@ public:
             }
             else
             {
-                // Bandpass (b1=0 property holds)
                 float a0inv = 1.0f / (1.0f + alpha);
                 b0[k] =  alpha * a0inv;
                 b2[k] = -alpha * a0inv;
@@ -76,11 +85,20 @@ public:
                 a2[k] = (1.0f - alpha) * a0inv;
             }
         }
+
+        // On first update after flush, snap prev = new so we don't interpolate from zeros.
+        if (!coeffsInitialized)
+        {
+            std::memcpy (prevB0, b0, sizeof (b0));
+            std::memcpy (prevB2, b2, sizeof (b2));
+            std::memcpy (prevA1, a1, sizeof (a1));
+            std::memcpy (prevA2, a2, sizeof (a2));
+            coeffsInitialized = true;
+        }
     }
 
     // input[numSamples] → outL/outR accumulated (does not clear outputs first).
-    // gains: linear gain per harmonic [kSize]. numStages: cascaded biquad stages (1–8).
-    // spread: 0=centre, 1=full alternate L/R pan.
+    // Coefficients are linearly interpolated from previous to current across the subblock.
     void process (const float* input,
                   float*       outL,
                   float*       outR,
@@ -89,9 +107,17 @@ public:
                   const float* gains,
                   int          numStages) noexcept
     {
+        const float invN = 1.0f / (float)numSamples;
+
         for (int k = 0; k < kSize; ++k)
         {
-            const float b0k = b0[k], b2k = b2[k], a1k = a1[k], a2k = a2[k];
+            // Per-sample coefficient deltas for linear interpolation
+            const float db0 = (b0[k] - prevB0[k]) * invN;
+            const float db2 = (b2[k] - prevB2[k]) * invN;
+            const float da1 = (a1[k] - prevA1[k]) * invN;
+            const float da2 = (a2[k] - prevA2[k]) * invN;
+
+            float b0k = prevB0[k], b2k = prevB2[k], a1k = prevA1[k], a2k = prevA2[k];
             const float gainK = gains[k];
 
             float pan   = spread * ((k & 1) ? 0.5f : -0.5f);
@@ -100,12 +126,13 @@ public:
             float gainL = gainK * std::sqrt (panL);
             float gainR = gainK * std::sqrt (panR);
 
-            // Load all stage states into locals for this harmonic
             float st1[8], st2[8];
             for (int st = 0; st < numStages; ++st) { st1[st] = s1[st][k]; st2[st] = s2[st][k]; }
 
             for (int i = 0; i < numSamples; ++i)
             {
+                b0k += db0; b2k += db2; a1k += da1; a2k += da2;
+
                 float x = input[i];
                 for (int st = 0; st < numStages; ++st)
                 {
@@ -122,8 +149,7 @@ public:
         }
     }
 
-    // Peak EQ process path. Uses b1=a1 property: s1 update differs from bandpass.
-    // Does not clear outputs first; call instead of process() when filterType==1.
+    // Peak EQ process path. Uses b1=a1 property; coefficients interpolated as above.
     void processPeak (const float* input,
                       float*       outL,
                       float*       outR,
@@ -132,9 +158,16 @@ public:
                       const float* gains,
                       int          numStages) noexcept
     {
+        const float invN = 1.0f / (float)numSamples;
+
         for (int k = 0; k < kSize; ++k)
         {
-            const float b0k = b0[k], b2k = b2[k], a1k = a1[k], a2k = a2[k];
+            const float db0 = (b0[k] - prevB0[k]) * invN;
+            const float db2 = (b2[k] - prevB2[k]) * invN;
+            const float da1 = (a1[k] - prevA1[k]) * invN;
+            const float da2 = (a2[k] - prevA2[k]) * invN;
+
+            float b0k = prevB0[k], b2k = prevB2[k], a1k = prevA1[k], a2k = prevA2[k];
             const float gainK = gains[k];
 
             float pan   = spread * ((k & 1) ? 0.5f : -0.5f);
@@ -148,11 +181,13 @@ public:
 
             for (int i = 0; i < numSamples; ++i)
             {
+                b0k += db0; b2k += db2; a1k += da1; a2k += da2;
+
                 float x = input[i];
                 for (int st = 0; st < numStages; ++st)
                 {
                     float y = b0k * x + st1[st];
-                    st1[st] = a1k * (x - y) + st2[st];  // b1=a1 for peak EQ
+                    st1[st] = a1k * (x - y) + st2[st];
                     st2[st] = b2k * x - a2k * y;
                     x = y;
                 }
@@ -164,18 +199,23 @@ public:
         }
     }
 
-    // Zero filter state; call when voice ends to prevent denormal CPU spikes.
+    // Zero filter state and reset coefficient interpolation.
+    // Call when a voice ends or is stolen to prevent denormal CPU spikes.
     void flushState() noexcept
     {
         std::memset (s1, 0, sizeof (s1));
         std::memset (s2, 0, sizeof (s2));
+        coeffsInitialized = false;
     }
 
 private:
     // SoA: group coefficients by field, not by filter (enables AVX)
-    float b0[kSize], b2[kSize]; // b1 = 0 for bandpass
+    float b0[kSize], b2[kSize];
     float a1[kSize], a2[kSize];
-    float s1[8][kSize], s2[8][kSize]; // per-stage, per-harmonic biquad state
+    float prevB0[kSize], prevB2[kSize]; // interpolation start points
+    float prevA1[kSize], prevA2[kSize];
+    float s1[8][kSize], s2[8][kSize];  // per-stage, per-harmonic biquad state
 
     double sr = 44100.0;
+    bool coeffsInitialized = false;
 };

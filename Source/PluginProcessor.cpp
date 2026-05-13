@@ -205,7 +205,7 @@ VoiceParameters ResosynAudioProcessor::buildVoiceParameters() const noexcept
     p.noteMorphAmount      = get ("noteMorphAmount");
     p.velocityMorphAmount  = get ("velocityMorphAmount");
 
-    p.masterGainLinear     = juce::Decibels::decibelsToGain (gainDb);
+    p.masterGainLinear     = 1.0f; // master gain applied post-render in processBlock via smoothedMasterGain
     p.polyphony            = juce::jlimit (1, kMaxVoices, (int)get ("polyphony"));
 
     p.snapshotA = snapshotA.data();
@@ -225,7 +225,22 @@ void ResosynAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                                           juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
+
+    smoothedMasterGain.setTargetValue (
+        juce::Decibels::decibelsToGain (
+            apvts.getRawParameterValue ("masterGain")->load()));
+
     voiceManager.processBlock (buffer, midiMessages, buildVoiceParameters());
+
+    // Apply smoothed master gain post-render for click-free level changes.
+    auto* L = buffer.getWritePointer (0);
+    auto* R = buffer.getWritePointer (1);
+    for (int i = 0; i < buffer.getNumSamples(); ++i)
+    {
+        float g = smoothedMasterGain.getNextValue();
+        L[i] *= g;
+        R[i] *= g;
+    }
 }
 
 //==============================================================================
