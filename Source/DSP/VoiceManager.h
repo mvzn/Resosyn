@@ -13,7 +13,6 @@ public:
         ageCounter = 0;
     }
 
-    // Sample-accurate MIDI processing interleaved with audio rendering.
     void processBlock (juce::AudioBuffer<float>& buffer,
                        juce::MidiBuffer&         midiMessages,
                        const VoiceParameters&    params)
@@ -44,44 +43,68 @@ public:
     }
 
 private:
-    std::array<Voice, kMaxVoices> voices;
+    // First kMaxVoices slots receive new notes; the full pool supports release ghosts.
+    std::array<Voice, kTotalVoiceSlots> voices;
     uint64_t ageCounter = 0;
 
     void renderVoices (juce::AudioBuffer<float>& buffer,
                        int startSample, int numSamples,
                        const VoiceParameters& params) const
     {
-        for (auto& v : const_cast<std::array<Voice, kMaxVoices>&> (voices))
+        for (auto& v : const_cast<std::array<Voice, kTotalVoiceSlots>&> (voices))
             v.process (buffer, startSample, numSamples, params);
     }
 
     void handleNoteOn (int note, float velocity, int polyphony)
     {
-        // Silence any voice already playing this note
+        // Release any non-ghost voice currently playing this note.
         for (auto& v : voices)
-            if (v.isActive() && v.getMidiNote() == note)
+            if (v.isActive() && !v.isInRelease() && v.getMidiNote() == note)
                 v.noteOff();
 
-        Voice* target = findFreeVoice();
-        if (target == nullptr)
-            target = stealOldestVoice (polyphony);
-        if (target == nullptr)
-            return;
+        // If at the polyphony limit, gracefully release the oldest sounding voice.
+        // It continues as a ghost in its current slot — no cut, no latency penalty.
+        if (countSoundingVoices() >= polyphony)
+        {
+            Voice* oldest = oldestSoundingVoice();
+            if (oldest) oldest->noteOff();
+        }
 
-        target->noteOn (note, velocity, ageCounter++);
+        // Start the new note on a free slot immediately (zero latency).
+        Voice* target = findFreeVoice();
+
+        // Fallback: all 16 slots occupied — steal the oldest release ghost.
+        // The steal fade in Voice handles this with a short ramp-out.
+        if (target == nullptr)
+            target = oldestReleaseVoice();
+
+        if (target != nullptr)
+            target->noteOn (note, velocity, ageCounter++);
     }
 
     void handleNoteOff (int note) noexcept
     {
+        // Only release the held (non-ghost) voice; ghosts play out uninterrupted.
         for (auto& v : voices)
-            if (v.isActive() && v.getMidiNote() == note)
+            if (v.isActive() && !v.isInRelease() && v.getMidiNote() == note)
                 v.noteOff();
     }
 
     void allNotesOff() noexcept
     {
         for (auto& v : voices)
-            v.noteOff();
+            if (v.isActive() && !v.isInRelease())
+                v.noteOff();
+    }
+
+    // ── Voice pool helpers ────────────────────────────────────────────────────
+
+    int countSoundingVoices() const noexcept
+    {
+        int n = 0;
+        for (const auto& v : voices)
+            if (v.isActive() && !v.isInRelease()) ++n;
+        return n;
     }
 
     Voice* findFreeVoice() noexcept
@@ -91,18 +114,25 @@ private:
         return nullptr;
     }
 
-    // Steal the voice with the lowest (oldest) startAge, limited to polyphony slots.
-    Voice* stealOldestVoice (int polyphony) noexcept
+    // Oldest sounding (non-release) voice — candidate for graceful release.
+    Voice* oldestSoundingVoice() noexcept
     {
         Voice* oldest = nullptr;
-        int count = 0;
         for (auto& v : voices)
-        {
-            if (count >= polyphony) break;
-            if (!oldest || v.getStartAge() < oldest->getStartAge())
-                oldest = &v;
-            ++count;
-        }
+            if (v.isActive() && !v.isInRelease())
+                if (!oldest || v.getStartAge() < oldest->getStartAge())
+                    oldest = &v;
+        return oldest;
+    }
+
+    // Oldest release ghost — last-resort steal target.
+    Voice* oldestReleaseVoice() noexcept
+    {
+        Voice* oldest = nullptr;
+        for (auto& v : voices)
+            if (v.isActive() && v.isInRelease())
+                if (!oldest || v.getStartAge() < oldest->getStartAge())
+                    oldest = &v;
         return oldest;
     }
 };

@@ -43,9 +43,10 @@ public:
         }
     }
 
-    void noteOff() noexcept { envelope.noteOff(); }
+    void noteOff() noexcept { envelope.noteOff(); inRelease = true; }
 
     bool     isActive()    const noexcept { return active; }
+    bool     isInRelease() const noexcept { return inRelease; }
     int      getMidiNote() const noexcept { return midiNote; }
     uint64_t getStartAge() const noexcept { return startAge; }
 
@@ -150,11 +151,12 @@ private:
     NoiseGenerator      noiseGen;
     WavetableOscillator wavetableOsc;
 
-    int      midiNote  = -1;
-    float    velocity  = 0.0f;
-    uint64_t startAge  = 0;
-    bool     active    = false;
-    double   sr        = 44100.0;
+    int      midiNote   = -1;
+    float    velocity   = 0.0f;
+    uint64_t startAge   = 0;
+    bool     active     = false;
+    bool     inRelease  = false;
+    double   sr         = 44100.0;
 
     // Sampler playhead
     double samplerPhase       = 0.0;
@@ -181,6 +183,7 @@ private:
         velocity          = vel;
         startAge          = age;
         active            = true;
+        inRelease         = false;
         samplerPhase      = 0.0;
         samplerPingPongFwd= true;
         hasPendingNote    = false;
