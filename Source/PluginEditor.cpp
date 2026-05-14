@@ -63,6 +63,11 @@ ResosynAudioProcessorEditor::ResosynAudioProcessorEditor (ResosynAudioProcessor&
     addAndMakeVisible (phaseAlignButton);
     phaseAlignAttach = std::make_unique<APVTS::ButtonAttachment> (apvts, "phaseAlign", phaseAlignButton);
 
+    phaseAlignLatencyLabel.setFont (juce::Font (juce::FontOptions (10.0f)));
+    phaseAlignLatencyLabel.setJustificationType (juce::Justification::centredRight);
+    phaseAlignLatencyLabel.setColour (juce::Label::textColourId, juce::Colours::grey);
+    addAndMakeVisible (phaseAlignLatencyLabel);
+
     filterTypeCombo.addItem ("Bandpass", 1);
     filterTypeCombo.addItem ("Peak",     2);
     addAndMakeVisible (filterTypeCombo);
@@ -172,9 +177,41 @@ ResosynAudioProcessorEditor::ResosynAudioProcessorEditor (ResosynAudioProcessor&
     loopStartAttach     = std::make_unique<APVTS::SliderAttachment> (apvts, "samplerLoopStart",     samplerLoopStartSlider);
     loopEndAttach       = std::make_unique<APVTS::SliderAttachment> (apvts, "samplerLoopEnd",       samplerLoopEndSlider);
     loopCrossfadeAttach = std::make_unique<APVTS::SliderAttachment> (apvts, "samplerLoopCrossfade", samplerLoopCrossfadeSlider);
+
+    updatePhaseAlignLatencyLabel();
+    startTimerHz (5);
 }
 
-ResosynAudioProcessorEditor::~ResosynAudioProcessorEditor() {}
+ResosynAudioProcessorEditor::~ResosynAudioProcessorEditor() { stopTimer(); }
+
+//==============================================================================
+void ResosynAudioProcessorEditor::timerCallback()
+{
+    updatePhaseAlignLatencyLabel();
+}
+
+void ResosynAudioProcessorEditor::updatePhaseAlignLatencyLabel()
+{
+    auto& apvts = audioProcessor.apvts;
+    bool  on    = apvts.getRawParameterValue ("phaseAlign")->load() > 0.5f;
+
+    if (!on)
+    {
+        phaseAlignLatencyLabel.setText ("", juce::dontSendNotification);
+        return;
+    }
+
+    float Q        = apvts.getRawParameterValue ("filterQ")->load();
+    int   stages   = (int)apvts.getRawParameterValue ("filterOrder")->load() + 1;
+    float sr       = (float)audioProcessor.getSampleRate();
+    if (sr <= 0.0f) sr = 44100.0f;
+
+    float latSamples = (float)stages * Q / (juce::MathConstants<float>::pi * 440.0f);
+    float latMs      = latSamples / sr * 1000.0f;
+
+    phaseAlignLatencyLabel.setText (juce::String (latMs, 1) + "ms",
+                                    juce::dontSendNotification);
+}
 
 //==============================================================================
 void ResosynAudioProcessorEditor::paint (juce::Graphics& g)
@@ -218,8 +255,9 @@ void ResosynAudioProcessorEditor::resized()
     placeKnob (wtPosSlider, wtPosLabel, col0 + 90, row0 + 84);
 
     // ── Filter ────────────────────────────────────────────────────────────────
-    filterLabel.setBounds      (col1 + 6,       row0 + 4,  120, 18);
-    phaseAlignButton.setBounds (col1 + 130,     row0 + 4,  112, 18);
+    filterLabel.setBounds             (col1 + 6,   row0 + 4, 120, 18);
+    phaseAlignButton.setBounds        (col1 + 130, row0 + 4,  72, 18);
+    phaseAlignLatencyLabel.setBounds  (col1 + 202, row0 + 4,  42, 18);
     filterTypeCombo.setBounds  (col1 + 6,       row0 + 26, 116, 20);
     filterOrderCombo.setBounds (col1 + 6 + 120, row0 + 26, 120, 20);
     placeKnob (filterQSlider,       filterQLabel,       col1 + 10,  row0 + 52);

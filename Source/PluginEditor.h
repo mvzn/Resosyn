@@ -2,7 +2,8 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
-class ResosynAudioProcessorEditor : public juce::AudioProcessorEditor
+class ResosynAudioProcessorEditor : public juce::AudioProcessorEditor,
+                                    private juce::Timer
 {
 public:
     explicit ResosynAudioProcessorEditor (ResosynAudioProcessor&);
@@ -10,6 +11,10 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+
+private:
+    void timerCallback() override;
+    void updatePhaseAlignLatencyLabel();
 
 private:
     ResosynAudioProcessor& audioProcessor;
@@ -27,6 +32,7 @@ private:
     // ── Filter ───────────────────────────────────────────────────────────────
     juce::Label        filterLabel;
     juce::ToggleButton phaseAlignButton;
+    juce::Label        phaseAlignLatencyLabel;
     juce::ComboBox     filterTypeCombo, filterOrderCombo;
     juce::Slider   filterQSlider, filterDetuneSlider, filterStretchSlider, filterSpreadSlider;
     juce::Slider   peakGainSlider;
