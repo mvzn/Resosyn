@@ -111,7 +111,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout ResosynAudioProcessor::creat
 
     // Master
     {
-        NR gainRange (-96.0f, 6.0f);
+        NR gainRange (-96.0f, 24.0f);
         gainRange.setSkewForCentre (-6.0f);
         layout.add (std::make_unique<juce::AudioParameterFloat> (
             makePID ("masterGain"), "Master Gain", gainRange, 0.0f));
@@ -436,6 +436,7 @@ void ResosynAudioProcessor::analyzeFile (const juce::File& file)
     {
         const float fn = (float)(k + 1) * f0;
         snapshotA[(size_t)k] = harmonicAmps[(size_t)k] / maxAmp;
+        snapshotB[(size_t)k] = harmonicAmps[(size_t)k] / maxAmp;
 
         if (harmonicFreqs[(size_t)k] > 0.0f && fn > 0.0f)
         {

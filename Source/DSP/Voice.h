@@ -92,6 +92,15 @@ public:
             for (int k = p.harmonicCount; k < kNumHarmonics; ++k)
                 blendedGains[k] = 0.0f;
 
+            // Flush biquad state when filter type changes: state accumulated under
+            // bandpass equations is garbage for peak EQ equations (and vice versa),
+            // causing a large spike on the first output sample after the switch.
+            if (p.filterType != lastFilterType)
+            {
+                filterBank.flushState();
+                lastFilterType = p.filterType;
+            }
+
             // Divide peak gain across stages so total gain equals the target.
             float perStagePeakGainDB = p.peakGainMasterDB / (float)p.filterStages;
             filterBank.updateCoefficients (fundamental, p.filterStretch,
@@ -203,6 +212,8 @@ private:
     float excRingBuf[kPhaseAlignBufSize] {};
     int   ringWritePos = 0;
 
+    int      lastFilterType   = -1; // detect type change mid-voice to flush stale biquad state
+
     // Steal fade state
     int      stealFadeRemain  = 0;
     bool     hasPendingNote   = false;
@@ -229,6 +240,7 @@ private:
         samplerPingPongFwd= true;
         hasPendingNote    = false;
         stealFadeRemain   = 0;
+        lastFilterType    = -1;
         ringWritePos      = 0;
         std::memset (excRingBuf, 0, sizeof (excRingBuf));
 
