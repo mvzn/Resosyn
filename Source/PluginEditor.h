@@ -65,7 +65,7 @@ private:
     };
 
     juce::TextButton harmonicsButton;
-    juce::TextButton analyzeButton;
+    juce::TextButton analyzeBtnA, analyzeBtnB;
     std::unique_ptr<juce::FileChooser>   mainAnalyzeChooser;
     std::unique_ptr<HarmonicDocWindow>   harmonicWindow;
     HarmonicEditorContent*               harmonicContent = nullptr; // owned by harmonicWindow

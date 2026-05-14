@@ -327,7 +327,7 @@ void ResosynAudioProcessor::loadSamplerFile (const juce::File& file)
 }
 
 //==============================================================================
-void ResosynAudioProcessor::analyzeFile (const juce::File& file)
+void ResosynAudioProcessor::analyzeFile (const juce::File& file, SnapshotTarget target)
 {
     std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (file));
     if (reader == nullptr) return;
@@ -435,8 +435,9 @@ void ResosynAudioProcessor::analyzeFile (const juce::File& file)
     for (int k = 0; k < kNumHarmonics; ++k)
     {
         const float fn = (float)(k + 1) * f0;
-        snapshotA[(size_t)k] = harmonicAmps[(size_t)k] / maxAmp;
-        snapshotB[(size_t)k] = harmonicAmps[(size_t)k] / maxAmp;
+        float amp = harmonicAmps[(size_t)k] / maxAmp;
+        if (target == SnapshotTarget::A    || target == SnapshotTarget::Both) snapshotA[(size_t)k] = amp;
+        if (target == SnapshotTarget::B    || target == SnapshotTarget::Both) snapshotB[(size_t)k] = amp;
 
         if (harmonicFreqs[(size_t)k] > 0.0f && fn > 0.0f)
         {

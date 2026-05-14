@@ -74,12 +74,13 @@ public:
         snapshotABtn.setToggleState (true, juce::dontSendNotification);
         snapshotABtn.setRadioGroupId (1);
         snapshotABtn.setClickingTogglesState (true);
-        snapshotABtn.onClick = [this] { editingA = true;  refreshGainBars(); };
+        snapshotABtn.onClick = [this] { editingA = true;  refreshGainBars(); updateAnalyzeBtnLabel(); };
 
         snapshotBBtn.setRadioGroupId (1);
         snapshotBBtn.setClickingTogglesState (true);
-        snapshotBBtn.onClick = [this] { editingA = false; refreshGainBars(); };
+        snapshotBBtn.onClick = [this] { editingA = false; refreshGainBars(); updateAnalyzeBtnLabel(); };
 
+        updateAnalyzeBtnLabel();
         analyzeBtn.onClick = [this] { openAnalysisChooser(); };
 
         for (auto* b : { &snapshotABtn, &snapshotBBtn, &analyzeBtn })
@@ -214,8 +215,17 @@ private:
         gainBars.repaint();
     }
 
+    void updateAnalyzeBtnLabel()
+    {
+        analyzeBtn.setButtonText (editingA ? "Analyze File → Snapshot A"
+                                           : "Analyze File → Snapshot B");
+    }
+
     void openAnalysisChooser()
     {
+        auto target = editingA ? ResosynAudioProcessor::SnapshotTarget::A
+                               : ResosynAudioProcessor::SnapshotTarget::B;
+
         fileChooser = std::make_unique<juce::FileChooser> (
             "Open audio file for analysis",
             juce::File::getSpecialLocation (juce::File::userHomeDirectory),
@@ -223,9 +233,9 @@ private:
 
         fileChooser->launchAsync (
             juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-            [this] (const juce::FileChooser& fc) {
+            [this, target] (const juce::FileChooser& fc) {
                 if (!fc.getResult().existsAsFile()) return;
-                processor.analyzeFile (fc.getResult());
+                processor.analyzeFile (fc.getResult(), target);
                 refreshFromProcessor();
             });
     }

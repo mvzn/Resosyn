@@ -189,24 +189,33 @@ ResosynAudioProcessorEditor::ResosynAudioProcessorEditor (ResosynAudioProcessor&
     masterGainAttach = std::make_unique<APVTS::SliderAttachment> (apvts, "masterGain", masterGainSlider);
     polyphonyAttach  = std::make_unique<APVTS::SliderAttachment> (apvts, "polyphony",  polyphonySlider);
 
-    // ── Analyze button (main window) ──────────────────────────────────────────
-    analyzeButton.setButtonText ("Analyze File → Snapshot A");
-    analyzeButton.onClick = [this] {
-        mainAnalyzeChooser = std::make_unique<juce::FileChooser> (
-            "Open audio file for analysis",
-            juce::File::getSpecialLocation (juce::File::userHomeDirectory),
-            audioProcessor.audioFormatWildcard());
+    // ── Analyze buttons (main window) ────────────────────────────────────────
+    auto makeAnalyzeBtn = [this] (juce::TextButton& btn,
+                                  const char* label,
+                                  ResosynAudioProcessor::SnapshotTarget target)
+    {
+        btn.setButtonText (label);
+        btn.onClick = [this, target] {
+            mainAnalyzeChooser = std::make_unique<juce::FileChooser> (
+                "Open audio file for analysis",
+                juce::File::getSpecialLocation (juce::File::userHomeDirectory),
+                audioProcessor.audioFormatWildcard());
 
-        mainAnalyzeChooser->launchAsync (
-            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-            [this] (const juce::FileChooser& fc) {
-                if (!fc.getResult().existsAsFile()) return;
-                audioProcessor.analyzeFile (fc.getResult());
-                if (harmonicContent != nullptr)
-                    harmonicContent->refreshFromProcessor();
-            });
+            mainAnalyzeChooser->launchAsync (
+                juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                [this, target] (const juce::FileChooser& fc) {
+                    if (!fc.getResult().existsAsFile()) return;
+                    audioProcessor.analyzeFile (fc.getResult(), target);
+                    if (harmonicContent != nullptr)
+                        harmonicContent->refreshFromProcessor();
+                });
+        };
+        addAndMakeVisible (btn);
     };
-    addAndMakeVisible (analyzeButton);
+
+    using ST = ResosynAudioProcessor::SnapshotTarget;
+    makeAnalyzeBtn (analyzeBtnA, "Analyze → A", ST::A);
+    makeAnalyzeBtn (analyzeBtnB, "Analyze → B", ST::B);
 
     // ── Sampler ───────────────────────────────────────────────────────────────
     initSectionLabel (samplerLabel, "SAMPLER");
@@ -343,8 +352,9 @@ void ResosynAudioProcessorEditor::resized()
         polyphonyLabel.setBounds   (col1 + 6, row1 + 56, lblW, 22);
         polyphonySlider.setBounds  (slX, row1 + 56, slW, 22);
     }
-    harmonicsButton.setBounds (col1 + 6, row1 + 90,  W - 12, 22);
-    analyzeButton.setBounds   (col1 + 6, row1 + 118, W - 12, 22);
+    harmonicsButton.setBounds (col1 + 6,              row1 + 90,  W - 12,      22);
+    analyzeBtnA.setBounds     (col1 + 6,              row1 + 118, (W - 16) / 2, 22);
+    analyzeBtnB.setBounds     (col1 + 6 + (W - 16) / 2 + 4, row1 + 118, (W - 16) / 2, 22);
 
     // ── Sampler ───────────────────────────────────────────────────────────────
     samplerLabel.setBounds            (col2 + 6,  row1 + 4,  W - 12, 18);

@@ -47,8 +47,10 @@ public:
     std::array<float, kNumHarmonics> perHarmonicDetuneCents;   // ±100, default 0
     std::array<float, kNumHarmonics> perHarmonicQMult;         // 0.1–50, default 1.0
 
-    // One-shot analysis: detects f0, per-harmonic gains → snapshotA, inharmonicity → freq/detune arrays.
-    void analyzeFile (const juce::File& file);
+    enum class SnapshotTarget { A, B, Both };
+
+    // One-shot analysis: detects f0, per-harmonic gains → chosen snapshot(s), inharmonicity → freq/detune arrays.
+    void analyzeFile (const juce::File& file, SnapshotTarget target = SnapshotTarget::Both);
     juce::String audioFormatWildcard() const { return formatManager.getWildcardForAllFormats(); }
 
     // Sampler file (path-only storage, V1)
