@@ -26,8 +26,9 @@ public:
         const float timbreMorph  = get ("timbreMorph");
         const float gainMorph    = get ("gainMorph");
         const float compensation = get ("compensation");
-        const bool  bpComp       = get ("bandpassComp") > 0.5f;
-        const float effComp      = ((filterType == 1) || bpComp) ? compensation : 0.0f;
+        const bool  isPeak       = (filterType == 1);
+        const bool  bpComp       = !isPeak && get ("bandpassComp") > 0.5f && compensation > 0.0f;
+        const float peakComp     = isPeak ? compensation : 0.0f;
 
         // Mirrors Voice::computeBlendedGains
         const float* snapA = processor.snapshotA.data();
@@ -49,6 +50,18 @@ public:
         }
         for (int k = 0; k < harmStart - 1; ++k)  gains[k] = 0.0f;
         for (int k = harmCount; k < kNumHarmonics; ++k) gains[k] = 0.0f;
+
+        // Bandpass: total-gain normalization morphs gains toward 1/Σgain.
+        if (bpComp)
+        {
+            float sumGain = 0.0f;
+            for (int k = 0; k < kNumHarmonics; ++k) sumGain += gains[k];
+            if (sumGain > 1e-6f)
+            {
+                const float scale = (1.0f - compensation) + compensation / sumGain;
+                for (int k = 0; k < kNumHarmonics; ++k) gains[k] *= scale;
+            }
+        }
 
         // Compute per-harmonic biquad coefficients at A4 (440 Hz), sr=44100 reference
         constexpr float kRefSr   = 44100.0f;
@@ -144,14 +157,13 @@ public:
             }
         }
 
-        // Compensation correction (approximate; uses summed magnitudes rather than complex).
-        // DSP applies: out = sum_k(filter_k(input)*gain_k) + input*(effComp - effComp*sum(gain_k))
-        // For unit input: |out| ≈ resp[i] + effComp*(1 - sum(gain_k))  (sign-corrected).
-        if (effComp > 0.0f)
+        // Peak EQ: dry-subtraction adds a constant magnitude offset of comp*(1 - Σgain).
+        // (Approximation using summed magnitudes rather than complex sum.)
+        if (peakComp > 0.0f)
         {
             float sumGain = 0.0f;
             for (int k = 0; k < kNumHarmonics; ++k) sumGain += gains[k];
-            const float dryOffset = effComp * (1.0f - sumGain);
+            const float dryOffset = peakComp * (1.0f - sumGain);
             for (int i = 0; i < kNFreq; ++i)
                 resp[i] = std::max (0.0f, resp[i] + dryOffset);
         }

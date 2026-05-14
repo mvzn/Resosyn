@@ -123,10 +123,23 @@ public:
             std::memset (tmpL, 0, sizeof (float) * (size_t)n);
             std::memset (tmpR, 0, sizeof (float) * (size_t)n);
 
-            // Compensation: dry-subtracted output reduces noise-floor blowup with many harmonics.
-            // Always active in Peak; in Bandpass only when explicitly enabled.
-            const bool  compActive = (p.filterType == 1) || p.bandpassCompEnabled;
-            const float effComp    = compActive ? p.compensation : 0.0f;
+            // Compensation: peak EQ uses per-harmonic dry subtraction. Bandpass uses
+            // gain normalization (1/Σgain) — dry subtraction is meaningless when
+            // bandpass output is ~0 outside its passband.
+            const bool  isPeak   = (p.filterType == 1);
+            const bool  bpComp   = !isPeak && p.bandpassCompEnabled && (p.compensation > 0.0f);
+            const float peakComp = isPeak ? p.compensation : 0.0f;
+
+            if (bpComp)
+            {
+                float sumGain = 0.0f;
+                for (int k = 0; k < kNumHarmonics; ++k) sumGain += blendedGains[k];
+                if (sumGain > 1e-6f)
+                {
+                    const float scale = (1.0f - p.compensation) + p.compensation / sumGain;
+                    for (int k = 0; k < kNumHarmonics; ++k) blendedGains[k] *= scale;
+                }
+            }
 
             if (p.phaseAlign)
             {
@@ -141,30 +154,30 @@ public:
                     preDelays[k] = (int)(maxDelayF * (1.0f - 1.0f / harmN) + 0.5f);
                 }
 
-                if (p.filterType == 1)
+                if (isPeak)
                     filterBank.processAlignedPeak (excRingBuf, kRingBufMask, ringWritePos,
                                                    preDelays, tmpL, tmpR, n,
-                                                   p.filterSpread, blendedGains, p.filterStages, effComp);
+                                                   p.filterSpread, blendedGains, p.filterStages, peakComp);
                 else
                     filterBank.processAligned (excRingBuf, kRingBufMask, ringWritePos,
                                                preDelays, tmpL, tmpR, n,
-                                               p.filterSpread, blendedGains, p.filterStages, effComp);
+                                               p.filterSpread, blendedGains, p.filterStages);
             }
             else
             {
-                if (p.filterType == 1)
-                    filterBank.processPeak (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains, p.filterStages, effComp);
+                if (isPeak)
+                    filterBank.processPeak (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains, p.filterStages, peakComp);
                 else
-                    filterBank.process    (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains, p.filterStages, effComp);
+                    filterBank.process    (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains, p.filterStages);
             }
 
-            // Add dry back once (to both channels). Combined with per-harmonic dry subtraction,
-            // this yields: out = input*(1 - sum(gain_k)*comp) + sum_k(filter_k(input)*gain_k).
-            if (effComp > 0.0f)
+            // Peak EQ: add dry back once after per-harmonic subtraction.
+            // Combined: out = input*(1 - comp*sum(gain_k)) + sum_k(peak_k(input)*gain_k).
+            if (peakComp > 0.0f)
             {
                 for (int i = 0; i < n; ++i)
                 {
-                    float d = effComp * excBuf[i];
+                    float d = peakComp * excBuf[i];
                     tmpL[i] += d;
                     tmpR[i] += d;
                 }
