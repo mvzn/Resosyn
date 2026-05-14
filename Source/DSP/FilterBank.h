@@ -99,13 +99,15 @@ public:
 
     // input[numSamples] → outL/outR accumulated (does not clear outputs first).
     // Coefficients are linearly interpolated from previous to current across the subblock.
+    // compensation: 0..1 — per-harmonic dry subtraction (caller adds dry back once).
     void process (const float* input,
                   float*       outL,
                   float*       outR,
                   int          numSamples,
                   float        spread,
                   const float* gains,
-                  int          numStages) noexcept
+                  int          numStages,
+                  float        compensation = 0.0f) noexcept
     {
         const float invN = 1.0f / (float)numSamples;
 
@@ -132,7 +134,8 @@ public:
             {
                 b0k += db0; b2k += db2; a1k += da1; a2k += da2;
 
-                float x = input[i];
+                float dry = input[i];
+                float x   = dry;
                 for (int st = 0; st < numStages; ++st)
                 {
                     float y = b0k * x + st1[st];
@@ -140,8 +143,9 @@ public:
                     st2[st] = b2k * x - a2k * y;
                     x = y;
                 }
-                outL[i] += x * gainL;
-                outR[i] += x * gainR;
+                float compd = x - compensation * dry;
+                outL[i] += compd * gainL;
+                outR[i] += compd * gainR;
             }
 
             for (int st = 0; st < numStages; ++st) { s1[st][k] = st1[st]; s2[st][k] = st2[st]; }
@@ -155,7 +159,8 @@ public:
     void processAligned (const float* ringBuf, int ringBufMask,
                          int ringReadBase, const int* preDelays,
                          float* outL, float* outR, int numSamples,
-                         float spread, const float* gains, int numStages) noexcept
+                         float spread, const float* gains, int numStages,
+                         float compensation = 0.0f) noexcept
     {
         const float invN    = 1.0f / (float)numSamples;
         const int   bufSize = ringBufMask + 1;
@@ -185,7 +190,8 @@ public:
             {
                 b0k += db0; b2k += db2; a1k += da1; a2k += da2;
 
-                float x = ringBuf[(ringReadBase + i - delay + bufSize) & ringBufMask];
+                float dry = ringBuf[(ringReadBase + i - delay + bufSize) & ringBufMask];
+                float x   = dry;
                 for (int st = 0; st < numStages; ++st)
                 {
                     float y = b0k * x + st1[st];
@@ -193,8 +199,9 @@ public:
                     st2[st] = b2k * x - a2k * y;
                     x = y;
                 }
-                outL[i] += x * gainL;
-                outR[i] += x * gainR;
+                float compd = x - compensation * dry;
+                outL[i] += compd * gainL;
+                outR[i] += compd * gainR;
             }
 
             for (int st = 0; st < numStages; ++st) { s1[st][k] = st1[st]; s2[st][k] = st2[st]; }
@@ -206,7 +213,8 @@ public:
     void processAlignedPeak (const float* ringBuf, int ringBufMask,
                              int ringReadBase, const int* preDelays,
                              float* outL, float* outR, int numSamples,
-                             float spread, const float* gains, int numStages) noexcept
+                             float spread, const float* gains, int numStages,
+                             float compensation = 0.0f) noexcept
     {
         const float invN    = 1.0f / (float)numSamples;
         const int   bufSize = ringBufMask + 1;
@@ -236,7 +244,8 @@ public:
             {
                 b0k += db0; b2k += db2; a1k += da1; a2k += da2;
 
-                float x = ringBuf[(ringReadBase + i - delay + bufSize) & ringBufMask];
+                float dry = ringBuf[(ringReadBase + i - delay + bufSize) & ringBufMask];
+                float x   = dry;
                 for (int st = 0; st < numStages; ++st)
                 {
                     float y = b0k * x + st1[st];
@@ -244,8 +253,9 @@ public:
                     st2[st] = b2k * x - a2k * y;
                     x = y;
                 }
-                outL[i] += x * gainL;
-                outR[i] += x * gainR;
+                float compd = x - compensation * dry;
+                outL[i] += compd * gainL;
+                outR[i] += compd * gainR;
             }
 
             for (int st = 0; st < numStages; ++st) { s1[st][k] = st1[st]; s2[st][k] = st2[st]; }
@@ -260,7 +270,8 @@ public:
                       int          numSamples,
                       float        spread,
                       const float* gains,
-                      int          numStages) noexcept
+                      int          numStages,
+                      float        compensation = 0.0f) noexcept
     {
         const float invN = 1.0f / (float)numSamples;
 
@@ -287,7 +298,8 @@ public:
             {
                 b0k += db0; b2k += db2; a1k += da1; a2k += da2;
 
-                float x = input[i];
+                float dry = input[i];
+                float x   = dry;
                 for (int st = 0; st < numStages; ++st)
                 {
                     float y = b0k * x + st1[st];
@@ -295,8 +307,9 @@ public:
                     st2[st] = b2k * x - a2k * y;
                     x = y;
                 }
-                outL[i] += x * gainL;
-                outR[i] += x * gainR;
+                float compd = x - compensation * dry;
+                outL[i] += compd * gainL;
+                outR[i] += compd * gainR;
             }
 
             for (int st = 0; st < numStages; ++st) { s1[st][k] = st1[st]; s2[st][k] = st2[st]; }

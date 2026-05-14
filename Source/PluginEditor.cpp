@@ -30,7 +30,7 @@ ResosynAudioProcessorEditor::ResosynAudioProcessorEditor (ResosynAudioProcessor&
     : AudioProcessorEditor (&p), audioProcessor (p),
       filterResponseDisplay (p)
 {
-    setSize (780, 644);
+    setSize (780, 678);
 
     auto& apvts = audioProcessor.apvts;
 
@@ -256,6 +256,20 @@ ResosynAudioProcessorEditor::ResosynAudioProcessorEditor (ResosynAudioProcessor&
     initRowLabel (harmonicStartLabel, "Low Cut");
     addAndMakeVisible (harmonicStartLabel);
 
+    // ── Compensation slider + BP toggle ────────────────────────────────────
+    compensationSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    compensationSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 22);
+    compensationSlider.setRange (0.0, 1.0, 0.0);
+    addAndMakeVisible (compensationSlider);
+    compensationAttach = std::make_unique<APVTS::SliderAttachment> (apvts, "compensation", compensationSlider);
+
+    initRowLabel (compensationLabel, "Comp");
+    addAndMakeVisible (compensationLabel);
+
+    bandpassCompButton.setButtonText ("BP Comp");
+    addAndMakeVisible (bandpassCompButton);
+    bandpassCompAttach = std::make_unique<APVTS::ButtonAttachment> (apvts, "bandpassComp", bandpassCompButton);
+
     updatePhaseAlignLatencyLabel();
     startTimerHz (5);
 }
@@ -312,7 +326,7 @@ void ResosynAudioProcessorEditor::paint (juce::Graphics& g)
 
     // Bottom filter-response panel (full width)
     const int dispY = row1 + H + pad;
-    juce::Rectangle<int> dispPanel (pad, dispY, getWidth() - 2 * pad, 172);
+    juce::Rectangle<int> dispPanel (pad, dispY, getWidth() - 2 * pad, 206);
     g.setColour (juce::Colour (0xff2a2a3e));
     g.fillRoundedRectangle (dispPanel.toFloat(), 6.0f);
     g.setColour (juce::Colour (0xff44446a));
@@ -379,14 +393,25 @@ void ResosynAudioProcessorEditor::resized()
     analyzeBtnA.setBounds     (col1 + 6,              row1 + 118, (W - 16) / 2, 22);
     analyzeBtnB.setBounds     (col1 + 6 + (W - 16) / 2 + 4, row1 + 118, (W - 16) / 2, 22);
 
-    // ── Filter response display + harmonic low-cut ───────────────────────────
+    // ── Filter response display + harmonic low-cut + compensation ───────────
     {
-        const int dispY  = row1 + H + pad;     // 464
-        const int innerX = pad + 6;            // 14
-        const int innerW = getWidth() - 2 * pad - 12; // 752
-        filterResponseDisplay.setBounds (innerX, dispY + 8,        innerW, 130);
-        harmonicStartLabel.setBounds    (innerX, dispY + 8 + 136,  52,     22);
-        harmonicStartSlider.setBounds   (innerX + 56, dispY + 8 + 136, innerW - 56, 22);
+        const int dispY    = row1 + H + pad;     // 464
+        const int innerX   = pad + 6;            // 14
+        const int innerW   = getWidth() - 2 * pad - 12; // 752
+        const int labelW   = 52;
+        const int bpBtnW   = 90;
+
+        filterResponseDisplay.setBounds (innerX, dispY + 8, innerW, 130);
+
+        const int row1Y = dispY + 8 + 130 + 8;       // = dispY + 146
+        harmonicStartLabel.setBounds  (innerX,             row1Y, labelW, 22);
+        harmonicStartSlider.setBounds (innerX + labelW + 4, row1Y, innerW - labelW - 4, 22);
+
+        const int row2Y = row1Y + 28;                // = dispY + 174
+        compensationLabel.setBounds   (innerX,                                  row2Y, labelW, 22);
+        compensationSlider.setBounds  (innerX + labelW + 4,                     row2Y,
+                                       innerW - labelW - 4 - bpBtnW - 6,        22);
+        bandpassCompButton.setBounds  (innerX + innerW - bpBtnW,                row2Y, bpBtnW, 22);
     }
 
     // ── Sampler ───────────────────────────────────────────────────────────────

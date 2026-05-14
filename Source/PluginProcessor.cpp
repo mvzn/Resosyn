@@ -82,6 +82,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout ResosynAudioProcessor::creat
     layout.add (std::make_unique<juce::AudioParameterInt> (
         makePID ("harmonicStart"), "Harm. Start", 1, kNumHarmonics, 1));
 
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        makePID ("compensation"), "Compensation", NR (0.0f, 1.0f), 0.0f));
+
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        makePID ("bandpassComp"), "BP Comp", false));
+
     // Envelope
     {
         NR timeRange (1.0f, 5000.0f);
@@ -201,6 +207,9 @@ VoiceParameters ResosynAudioProcessor::buildVoiceParameters() const noexcept
     p.filterSpread         = get ("filterSpread");
     // 0→-96 dB (neutral/silent), 100→+46 dB
     p.peakGainMasterDB     = -96.0f + 142.0f * (get ("peakGainMaster") / 100.0f);
+
+    p.compensation         = get ("compensation");
+    p.bandpassCompEnabled  = get ("bandpassComp") > 0.5f;
 
     p.attackMs             = get ("envAttack");
     p.decayMs              = get ("envDecay");

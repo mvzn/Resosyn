@@ -23,6 +23,13 @@ struct VoiceParameters
     float filterSpread;         // 0–1
     float peakGainMasterDB;     // –96 to +46 dB, used only in Peak mode
 
+    // 0–1: dry-subtraction compensation. Per-harmonic output becomes
+    // (filter_k(input) - compensation*input)*gain_k; dry input added back once after.
+    // Tames noise-floor blowup with many active harmonics. Always applied in Peak;
+    // applied in Bandpass only if bandpassCompEnabled.
+    float compensation;
+    bool  bandpassCompEnabled;
+
     float attackMs;
     float decayMs;
     float sustainLevel;         // 0–1

@@ -123,6 +123,11 @@ public:
             std::memset (tmpL, 0, sizeof (float) * (size_t)n);
             std::memset (tmpR, 0, sizeof (float) * (size_t)n);
 
+            // Compensation: dry-subtracted output reduces noise-floor blowup with many harmonics.
+            // Always active in Peak; in Bandpass only when explicitly enabled.
+            const bool  compActive = (p.filterType == 1) || p.bandpassCompEnabled;
+            const float effComp    = compActive ? p.compensation : 0.0f;
+
             if (p.phaseAlign)
             {
                 int preDelays[kNumHarmonics];
@@ -139,18 +144,30 @@ public:
                 if (p.filterType == 1)
                     filterBank.processAlignedPeak (excRingBuf, kRingBufMask, ringWritePos,
                                                    preDelays, tmpL, tmpR, n,
-                                                   p.filterSpread, blendedGains, p.filterStages);
+                                                   p.filterSpread, blendedGains, p.filterStages, effComp);
                 else
                     filterBank.processAligned (excRingBuf, kRingBufMask, ringWritePos,
                                                preDelays, tmpL, tmpR, n,
-                                               p.filterSpread, blendedGains, p.filterStages);
+                                               p.filterSpread, blendedGains, p.filterStages, effComp);
             }
             else
             {
                 if (p.filterType == 1)
-                    filterBank.processPeak (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains, p.filterStages);
+                    filterBank.processPeak (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains, p.filterStages, effComp);
                 else
-                    filterBank.process (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains, p.filterStages);
+                    filterBank.process    (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains, p.filterStages, effComp);
+            }
+
+            // Add dry back once (to both channels). Combined with per-harmonic dry subtraction,
+            // this yields: out = input*(1 - sum(gain_k)*comp) + sum_k(filter_k(input)*gain_k).
+            if (effComp > 0.0f)
+            {
+                for (int i = 0; i < n; ++i)
+                {
+                    float d = effComp * excBuf[i];
+                    tmpL[i] += d;
+                    tmpR[i] += d;
+                }
             }
 
             ringWritePos = (ringWritePos + n) & kRingBufMask;

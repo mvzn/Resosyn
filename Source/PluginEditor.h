@@ -49,11 +49,16 @@ private:
         filterQAttach, filterDetuneAttach, filterStretchAttach, filterSpreadAttach,
         peakGainAttach, harmonicCountAttach;
 
-    // ── Filter response display + harmonic low-cut ───────────────────────────
+    // ── Filter response display + harmonic low-cut + compensation ───────────
     FilterResponseDisplay filterResponseDisplay;
     juce::Slider          harmonicStartSlider;
     juce::Label           harmonicStartLabel;
+    juce::Slider          compensationSlider;
+    juce::Label           compensationLabel;
+    juce::ToggleButton    bandpassCompButton;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> harmonicStartAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compensationAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bandpassCompAttach;
 
     // ── Envelope ─────────────────────────────────────────────────────────────
     juce::Label  envelopeLabel;

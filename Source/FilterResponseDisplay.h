@@ -25,6 +25,9 @@ public:
         const int   harmStart    = juce::jlimit (1, kNumHarmonics, (int)get ("harmonicStart"));
         const float timbreMorph  = get ("timbreMorph");
         const float gainMorph    = get ("gainMorph");
+        const float compensation = get ("compensation");
+        const bool  bpComp       = get ("bandpassComp") > 0.5f;
+        const float effComp      = ((filterType == 1) || bpComp) ? compensation : 0.0f;
 
         // Mirrors Voice::computeBlendedGains
         const float* snapA = processor.snapshotA.data();
@@ -139,6 +142,18 @@ public:
 
                 resp[i] += gains[k] * hN;
             }
+        }
+
+        // Compensation correction (approximate; uses summed magnitudes rather than complex).
+        // DSP applies: out = sum_k(filter_k(input)*gain_k) + input*(effComp - effComp*sum(gain_k))
+        // For unit input: |out| ≈ resp[i] + effComp*(1 - sum(gain_k))  (sign-corrected).
+        if (effComp > 0.0f)
+        {
+            float sumGain = 0.0f;
+            for (int k = 0; k < kNumHarmonics; ++k) sumGain += gains[k];
+            const float dryOffset = effComp * (1.0f - sumGain);
+            for (int i = 0; i < kNFreq; ++i)
+                resp[i] = std::max (0.0f, resp[i] + dryOffset);
         }
 
         // ── Draw ─────────────────────────────────────────────────────────────────
