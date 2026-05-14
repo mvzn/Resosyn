@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "HarmonicEditorContent.h"
+#include "FilterResponseDisplay.h"
 
 class ResosynAudioProcessorEditor : public juce::AudioProcessorEditor,
                                     private juce::Timer
@@ -47,6 +48,12 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
         filterQAttach, filterDetuneAttach, filterStretchAttach, filterSpreadAttach,
         peakGainAttach, harmonicCountAttach;
+
+    // ── Filter response display + harmonic low-cut ───────────────────────────
+    FilterResponseDisplay filterResponseDisplay;
+    juce::Slider          harmonicStartSlider;
+    juce::Label           harmonicStartLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> harmonicStartAttach;
 
     // ── Envelope ─────────────────────────────────────────────────────────────
     juce::Label  envelopeLabel;

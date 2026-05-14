@@ -79,6 +79,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout ResosynAudioProcessor::creat
     layout.add (std::make_unique<juce::AudioParameterInt> (
         makePID ("harmonicCount"), "Harmonics", 1, kNumHarmonics, kNumHarmonics));
 
+    layout.add (std::make_unique<juce::AudioParameterInt> (
+        makePID ("harmonicStart"), "Harm. Start", 1, kNumHarmonics, 1));
+
     // Envelope
     {
         NR timeRange (1.0f, 5000.0f);
@@ -191,6 +194,7 @@ VoiceParameters ResosynAudioProcessor::buildVoiceParameters() const noexcept
     p.filterStages         = (int)get ("filterOrder") + 1; // choice index 0–7 → stages 1–8
     p.phaseAlign           = get ("phaseAlign") > 0.5f;    // stub — see DEVNOTES.md
     p.harmonicCount        = juce::jlimit (1, kNumHarmonics, (int)apvts.getRawParameterValue ("harmonicCount")->load());
+    p.harmonicStart        = juce::jlimit (1, kNumHarmonics, (int)apvts.getRawParameterValue ("harmonicStart")->load());
     p.overallQ             = get ("filterQ");
     p.filterDetuneCents    = get ("filterDetune");
     p.filterStretch        = get ("filterStretch");

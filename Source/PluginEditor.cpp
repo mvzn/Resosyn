@@ -27,9 +27,10 @@ static void initKnobLabel (juce::Label& l, const juce::String& text)
 
 //==============================================================================
 ResosynAudioProcessorEditor::ResosynAudioProcessorEditor (ResosynAudioProcessor& p)
-    : AudioProcessorEditor (&p), audioProcessor (p)
+    : AudioProcessorEditor (&p), audioProcessor (p),
+      filterResponseDisplay (p)
 {
-    setSize (780, 500);
+    setSize (780, 644);
 
     auto& apvts = audioProcessor.apvts;
 
@@ -242,6 +243,19 @@ ResosynAudioProcessorEditor::ResosynAudioProcessorEditor (ResosynAudioProcessor&
     loopEndAttach       = std::make_unique<APVTS::SliderAttachment> (apvts, "samplerLoopEnd",       samplerLoopEndSlider);
     loopCrossfadeAttach = std::make_unique<APVTS::SliderAttachment> (apvts, "samplerLoopCrossfade", samplerLoopCrossfadeSlider);
 
+    // ── Filter response display ────────────────────────────────────────────
+    addAndMakeVisible (filterResponseDisplay);
+
+    // ── Harmonic low-cut slider ───────────────────────────────────────────
+    harmonicStartSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    harmonicStartSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 36, 22);
+    harmonicStartSlider.setRange (1, kNumHarmonics, 1);
+    addAndMakeVisible (harmonicStartSlider);
+    harmonicStartAttach = std::make_unique<APVTS::SliderAttachment> (apvts, "harmonicStart", harmonicStartSlider);
+
+    initRowLabel (harmonicStartLabel, "Low Cut");
+    addAndMakeVisible (harmonicStartLabel);
+
     updatePhaseAlignLatencyLabel();
     startTimerHz (5);
 }
@@ -252,6 +266,7 @@ ResosynAudioProcessorEditor::~ResosynAudioProcessorEditor() { stopTimer(); }
 void ResosynAudioProcessorEditor::timerCallback()
 {
     updatePhaseAlignLatencyLabel();
+    filterResponseDisplay.repaint();
 }
 
 void ResosynAudioProcessorEditor::updatePhaseAlignLatencyLabel()
@@ -294,6 +309,14 @@ void ResosynAudioProcessorEditor::paint (juce::Graphics& g)
 
     drawSection (col0, row0); drawSection (col1, row0); drawSection (col2, row0);
     drawSection (col0, row1); drawSection (col1, row1); drawSection (col2, row1);
+
+    // Bottom filter-response panel (full width)
+    const int dispY = row1 + H + pad;
+    juce::Rectangle<int> dispPanel (pad, dispY, getWidth() - 2 * pad, 172);
+    g.setColour (juce::Colour (0xff2a2a3e));
+    g.fillRoundedRectangle (dispPanel.toFloat(), 6.0f);
+    g.setColour (juce::Colour (0xff44446a));
+    g.drawRoundedRectangle (dispPanel.toFloat().reduced (0.5f), 6.0f, 1.0f);
 }
 
 //==============================================================================
@@ -355,6 +378,16 @@ void ResosynAudioProcessorEditor::resized()
     harmonicsButton.setBounds (col1 + 6,              row1 + 90,  W - 12,      22);
     analyzeBtnA.setBounds     (col1 + 6,              row1 + 118, (W - 16) / 2, 22);
     analyzeBtnB.setBounds     (col1 + 6 + (W - 16) / 2 + 4, row1 + 118, (W - 16) / 2, 22);
+
+    // ── Filter response display + harmonic low-cut ───────────────────────────
+    {
+        const int dispY  = row1 + H + pad;     // 464
+        const int innerX = pad + 6;            // 14
+        const int innerW = getWidth() - 2 * pad - 12; // 752
+        filterResponseDisplay.setBounds (innerX, dispY + 8,        innerW, 130);
+        harmonicStartLabel.setBounds    (innerX, dispY + 8 + 136,  52,     22);
+        harmonicStartSlider.setBounds   (innerX + 56, dispY + 8 + 136, innerW - 56, 22);
+    }
 
     // ── Sampler ───────────────────────────────────────────────────────────────
     samplerLabel.setBounds            (col2 + 6,  row1 + 4,  W - 12, 18);

@@ -89,6 +89,8 @@ public:
             float blendedGains[kNumHarmonics];
             float morphPos = computeMorphPos (p);
             computeBlendedGains (p, morphPos, blendedGains);
+            for (int k = 0; k < p.harmonicStart - 1; ++k)
+                blendedGains[k] = 0.0f;
             for (int k = p.harmonicCount; k < kNumHarmonics; ++k)
                 blendedGains[k] = 0.0f;
 

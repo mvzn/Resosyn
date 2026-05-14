@@ -15,6 +15,7 @@ struct VoiceParameters
     int   filterStages;         // 1–8, cascaded biquad stages (order = stages*2)
     bool  phaseAlign;           // compensate per-harmonic group delay (see DEVNOTES.md)
     int   harmonicCount;        // 1–32, harmonics above this are silenced
+    int   harmonicStart;        // 1–32, harmonics below this are silenced (low-cut)
 
     float overallQ;
     float filterDetuneCents;    // –100 to +100
