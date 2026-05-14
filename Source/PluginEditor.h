@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "HarmonicEditorContent.h"
 
 class ResosynAudioProcessorEditor : public juce::AudioProcessorEditor,
                                     private juce::Timer
@@ -54,6 +55,18 @@ private:
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
         attackAttach, decayAttach, sustainAttach, releaseAttach;
+
+    // ── Harmonic editor popup ────────────────────────────────────────────────
+    struct HarmonicDocWindow : juce::DocumentWindow {
+        std::function<void()> onClose;
+        HarmonicDocWindow (const juce::String& n, juce::Colour bg)
+            : DocumentWindow (n, bg, DocumentWindow::closeButton) {}
+        void closeButtonPressed() override { if (onClose) onClose(); }
+    };
+
+    juce::TextButton harmonicsButton;
+    std::unique_ptr<HarmonicDocWindow> harmonicWindow;
+    HarmonicEditorContent* harmonicContent = nullptr; // owned by harmonicWindow
 
     // ── Morph ────────────────────────────────────────────────────────────────
     juce::Label  morphLabel;

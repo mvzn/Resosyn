@@ -95,7 +95,10 @@ public:
             // Divide peak gain across stages so total gain equals the target.
             float perStagePeakGainDB = p.peakGainMasterDB / (float)p.filterStages;
             filterBank.updateCoefficients (fundamental, p.filterStretch,
-                                           p.overallQ, kZero32, kZero32, kOne32,
+                                           p.overallQ,
+                                           p.perHarmonicFreqSemitones,
+                                           p.perHarmonicDetuneCents,
+                                           p.perHarmonicQMult,
                                            p.filterType, perStagePeakGainDB);
 
             generateExcitation (excBuf, n, p);

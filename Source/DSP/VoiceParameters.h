@@ -35,8 +35,11 @@ struct VoiceParameters
     float masterGainLinear;
     int   polyphony;            // 1–8
 
-    const float* snapshotA;     // [kNumHarmonics] linear gains
-    const float* snapshotB;     // [kNumHarmonics] linear gains
+    const float* snapshotA;              // [kNumHarmonics] linear gains
+    const float* snapshotB;              // [kNumHarmonics] linear gains
+    const float* perHarmonicFreqSemitones; // [kNumHarmonics] ±24 semitone offset per harmonic
+    const float* perHarmonicDetuneCents;   // [kNumHarmonics] ±100 cents per harmonic
+    const float* perHarmonicQMult;         // [kNumHarmonics] Q multiplier, default 1.0
 
     const juce::AudioBuffer<float>* samplerBuffer; // nullptr if no file loaded
     bool  samplerLoopEnable;

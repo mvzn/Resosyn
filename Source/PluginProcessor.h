@@ -40,9 +40,16 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
 
-    // Per-harmonic data (not APVTS params; serialised manually)
+    // Per-harmonic data (not APVTS params; serialised manually in getStateInformation)
     std::array<float, kNumHarmonics> snapshotA;
     std::array<float, kNumHarmonics> snapshotB;
+    std::array<float, kNumHarmonics> perHarmonicFreqSemitones; // ±24, default 0
+    std::array<float, kNumHarmonics> perHarmonicDetuneCents;   // ±100, default 0
+    std::array<float, kNumHarmonics> perHarmonicQMult;         // 0.1–50, default 1.0
+
+    // One-shot analysis: detects f0, per-harmonic gains → snapshotA, inharmonicity → freq/detune arrays.
+    void analyzeFile (const juce::File& file);
+    juce::String audioFormatWildcard() const { return formatManager.getWildcardForAllFormats(); }
 
     // Sampler file (path-only storage, V1)
     juce::AudioBuffer<float> samplerBuffer;

@@ -101,6 +101,31 @@ ResosynAudioProcessorEditor::ResosynAudioProcessorEditor (ResosynAudioProcessor&
     filterSpreadAttach   = std::make_unique<APVTS::SliderAttachment> (apvts, "filterSpread",   filterSpreadSlider);
     harmonicCountAttach  = std::make_unique<APVTS::SliderAttachment> (apvts, "harmonicCount",  harmonicCountSlider);
 
+    harmonicsButton.setButtonText ("Edit Harmonics");
+    harmonicsButton.onClick = [this] {
+        if (harmonicWindow != nullptr)
+        {
+            harmonicWindow->toFront (true);
+            return;
+        }
+
+        auto* content = new HarmonicEditorContent (audioProcessor);
+        harmonicContent = content;
+
+        harmonicWindow = std::make_unique<HarmonicDocWindow> (
+            "Harmonic Editor", juce::Colour (0xff1e1e2e));
+        harmonicWindow->setContentOwned (content, true);
+        harmonicWindow->setSize (760, 480);
+        harmonicWindow->setResizable (false, false);
+        harmonicWindow->setUsingNativeTitleBar (true);
+        harmonicWindow->onClose = [this] {
+            harmonicWindow.reset();
+            harmonicContent = nullptr;
+        };
+        harmonicWindow->setVisible (true);
+    };
+    addAndMakeVisible (harmonicsButton);
+
     // ── Envelope ──────────────────────────────────────────────────────────────
     initSectionLabel (envelopeLabel, "ENVELOPE");
     addAndMakeVisible (envelopeLabel);
@@ -264,6 +289,7 @@ void ResosynAudioProcessorEditor::resized()
     placeKnob (filterStretchSlider,   filterStretchLabel,   col1 + 10,  row0 + 138);
     placeKnob (filterSpreadSlider,    filterSpreadLabel,    col1 + 90,  row0 + 138);
     placeKnob (harmonicCountSlider,   harmonicCountLabel,   col1 + 170, row0 + 138);
+    harmonicsButton.setBounds         (col1 + 6,            row0 + 196, W - 12, 18);
 
     // ── Envelope ──────────────────────────────────────────────────────────────
     envelopeLabel.setBounds (col2 + 6, row0 + 4, W - 12, 18);

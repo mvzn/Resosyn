@@ -131,6 +131,9 @@ ResosynAudioProcessor::ResosynAudioProcessor()
 {
     snapshotA.fill (1.0f);
     snapshotB.fill (0.0f);
+    perHarmonicFreqSemitones.fill (0.0f);
+    perHarmonicDetuneCents.fill (0.0f);
+    perHarmonicQMult.fill (1.0f);
 
     formatManager.registerBasicFormats();
 }
@@ -210,6 +213,9 @@ VoiceParameters ResosynAudioProcessor::buildVoiceParameters() const noexcept
 
     p.snapshotA = snapshotA.data();
     p.snapshotB = snapshotB.data();
+    p.perHarmonicFreqSemitones = perHarmonicFreqSemitones.data();
+    p.perHarmonicDetuneCents   = perHarmonicDetuneCents.data();
+    p.perHarmonicQMult         = perHarmonicQMult.data();
 
     p.samplerBuffer        = (samplerBuffer.getNumSamples() > 0) ? &samplerBuffer : nullptr;
     p.samplerLoopEnable    = get ("samplerLoopEnable") > 0.5f;
@@ -256,13 +262,19 @@ void ResosynAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     auto state = apvts.copyState();
     auto xml = state.createXml();
 
-    // Append snapshots and sampler path as XML attributes on the root
-    auto snapA = xml->createNewChildElement ("SnapshotA");
-    auto snapB = xml->createNewChildElement ("SnapshotB");
+    auto snapA  = xml->createNewChildElement ("SnapshotA");
+    auto snapB  = xml->createNewChildElement ("SnapshotB");
+    auto phFreq = xml->createNewChildElement ("PerHarmonicFreq");
+    auto phDet  = xml->createNewChildElement ("PerHarmonicDet");
+    auto phQ    = xml->createNewChildElement ("PerHarmonicQ");
     for (int k = 0; k < kNumHarmonics; ++k)
     {
-        snapA->setAttribute ("h" + juce::String (k), (double)snapshotA[(size_t)k]);
-        snapB->setAttribute ("h" + juce::String (k), (double)snapshotB[(size_t)k]);
+        juce::String h = "h" + juce::String (k);
+        snapA ->setAttribute (h, (double)snapshotA [(size_t)k]);
+        snapB ->setAttribute (h, (double)snapshotB [(size_t)k]);
+        phFreq->setAttribute (h, (double)perHarmonicFreqSemitones[(size_t)k]);
+        phDet ->setAttribute (h, (double)perHarmonicDetuneCents  [(size_t)k]);
+        phQ   ->setAttribute (h, (double)perHarmonicQMult        [(size_t)k]);
     }
     xml->setAttribute ("samplerFilePath", samplerFilePath);
 
@@ -284,6 +296,18 @@ void ResosynAudioProcessor::setStateInformation (const void* data, int sizeInByt
         for (int k = 0; k < kNumHarmonics; ++k)
             snapshotB[(size_t)k] = (float)snapB->getDoubleAttribute ("h" + juce::String (k), 0.0);
 
+    if (auto* phFreq = xml->getChildByName ("PerHarmonicFreq"))
+        for (int k = 0; k < kNumHarmonics; ++k)
+            perHarmonicFreqSemitones[(size_t)k] = (float)phFreq->getDoubleAttribute ("h" + juce::String (k), 0.0);
+
+    if (auto* phDet = xml->getChildByName ("PerHarmonicDet"))
+        for (int k = 0; k < kNumHarmonics; ++k)
+            perHarmonicDetuneCents[(size_t)k] = (float)phDet->getDoubleAttribute ("h" + juce::String (k), 0.0);
+
+    if (auto* phQ = xml->getChildByName ("PerHarmonicQ"))
+        for (int k = 0; k < kNumHarmonics; ++k)
+            perHarmonicQMult[(size_t)k] = (float)phQ->getDoubleAttribute ("h" + juce::String (k), 1.0);
+
     samplerFilePath = xml->getStringAttribute ("samplerFilePath");
     if (samplerFilePath.isNotEmpty())
         loadSamplerFile (juce::File (samplerFilePath));
@@ -300,6 +324,128 @@ void ResosynAudioProcessor::loadSamplerFile (const juce::File& file)
                            (int)reader->lengthInSamples);
     reader->read (&samplerBuffer, 0, (int)reader->lengthInSamples, 0, true, true);
     samplerFilePath = file.getFullPathName();
+}
+
+//==============================================================================
+void ResosynAudioProcessor::analyzeFile (const juce::File& file)
+{
+    std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (file));
+    if (reader == nullptr) return;
+
+    const double fileSr  = reader->sampleRate;
+    const int    fftOrder = 15;                 // 32768 bins
+    const int    fftSize  = 1 << fftOrder;
+
+    // Read up to fftSize samples, starting at 20% of the file to skip attack transient.
+    const int fileLen      = (int)reader->lengthInSamples;
+    const int startSample  = (int)(fileLen * 0.20);
+    const int samplesToRead = std::min (fftSize, fileLen - startSample);
+    if (samplesToRead < 512) return;
+
+    juce::AudioBuffer<float> tmp ((int)reader->numChannels, samplesToRead);
+    reader->read (&tmp, 0, samplesToRead, startSample, true, true);
+
+    // Mix down to mono
+    std::vector<float> mono (samplesToRead, 0.0f);
+    for (int ch = 0; ch < tmp.getNumChannels(); ++ch)
+        for (int i = 0; i < samplesToRead; ++i)
+            mono[(size_t)i] += tmp.getSample (ch, i) / (float)tmp.getNumChannels();
+
+    // Build FFT buffer (size 2*fftSize): real samples + Hann window in first half, zeros in second.
+    std::vector<float> fftData (fftSize * 2, 0.0f);
+    for (int i = 0; i < samplesToRead; ++i)
+    {
+        float hann = 0.5f * (1.0f - std::cos (2.0f * juce::MathConstants<float>::pi
+                                               * (float)i / (float)(samplesToRead - 1)));
+        fftData[(size_t)i] = mono[(size_t)i] * hann;
+    }
+
+    juce::dsp::FFT fft (fftOrder);
+    fft.performFrequencyOnlyForwardTransform (fftData.data(), true);
+    // fftData[0..fftSize/2] now holds magnitudes
+
+    const int halfSize = fftSize / 2;
+    const auto mag = [&](int k) -> float {
+        return (k >= 0 && k < halfSize) ? fftData[(size_t)k] : 0.0f;
+    };
+
+    // HPS (Harmonic Product Spectrum) to find f0 in 80–1500 Hz.
+    int minBin = std::max (1, (int)(80.0  * fftSize / fileSr));
+    int maxBin =             (int)(1500.0 * fftSize / fileSr);
+    maxBin = std::min (maxBin, halfSize / 5 - 1); // HPS needs room for 5x product
+
+    std::vector<float> hps ((size_t)maxBin, 0.0f);
+    for (int k = minBin; k < maxBin; ++k)
+    {
+        hps[(size_t)k] = mag (k);
+        for (int d = 2; d <= 5; ++d)
+            hps[(size_t)k] *= mag (k * d);
+    }
+
+    int f0Bin = minBin;
+    for (int k = minBin + 1; k < maxBin; ++k)
+        if (hps[(size_t)k] > hps[(size_t)f0Bin]) f0Bin = k;
+
+    // Sub-bin parabolic interpolation for precise f0.
+    float f0BinF = (float)f0Bin;
+    if (f0Bin > minBin && f0Bin < maxBin - 1)
+    {
+        float a = hps[(size_t)(f0Bin - 1)];
+        float b = hps[(size_t)f0Bin];
+        float c = hps[(size_t)(f0Bin + 1)];
+        if (2.0f * b > a + c)
+            f0BinF += 0.5f * (a - c) / (a - 2.0f * b + c);
+    }
+    const float f0 = f0BinF * (float)fileSr / (float)fftSize;
+    if (f0 < 20.0f) return; // implausible
+
+    // Locate each harmonic: search ±2 semitones around n*f0, parabolic interpolation.
+    float harmonicAmps [kNumHarmonics] = {};
+    float harmonicFreqs[kNumHarmonics] = {};
+    float maxAmp = 0.0f;
+
+    for (int k = 0; k < kNumHarmonics; ++k)
+    {
+        const float fn = (float)(k + 1) * f0;
+        if (fn > fileSr * 0.47f) break;
+
+        const float semRange = std::pow (2.0f, 2.0f / 12.0f);
+        int bLow  = std::max (1, (int)(fn / semRange * fftSize / fileSr));
+        int bHigh = std::min (halfSize - 2, (int)(fn * semRange * fftSize / fileSr));
+
+        int peakBin = bLow;
+        for (int b = bLow + 1; b <= bHigh; ++b)
+            if (mag (b) > mag (peakBin)) peakBin = b;
+
+        // Sub-bin parabolic interpolation
+        float peakBinF = (float)peakBin;
+        {
+            float a = mag (peakBin - 1), bv = mag (peakBin), c = mag (peakBin + 1);
+            if (2.0f * bv > a + c)
+                peakBinF += 0.5f * (a - c) / (a - 2.0f * bv + c);
+        }
+
+        harmonicAmps [(size_t)k] = mag (peakBin);
+        harmonicFreqs[(size_t)k] = peakBinF * (float)fileSr / (float)fftSize;
+        maxAmp = std::max (maxAmp, harmonicAmps[(size_t)k]);
+    }
+
+    if (maxAmp <= 0.0f) return;
+
+    for (int k = 0; k < kNumHarmonics; ++k)
+    {
+        const float fn = (float)(k + 1) * f0;
+        snapshotA[(size_t)k] = harmonicAmps[(size_t)k] / maxAmp;
+
+        if (harmonicFreqs[(size_t)k] > 0.0f && fn > 0.0f)
+        {
+            const float devSemitones = 12.0f * std::log2 (harmonicFreqs[(size_t)k] / fn);
+            const float coarse       = std::round (devSemitones);
+            const float fine         = (devSemitones - coarse) * 100.0f;
+            perHarmonicFreqSemitones[(size_t)k] = juce::jlimit (-24.0f, 24.0f,  coarse);
+            perHarmonicDetuneCents  [(size_t)k] = juce::jlimit (-100.0f, 100.0f, fine);
+        }
+    }
 }
 
 //==============================================================================
