@@ -112,7 +112,7 @@ public:
             if (p.phaseAlign)
             {
                 int preDelays[kNumHarmonics];
-                float maxDelayF = (float)p.filterStages * p.overallQ
+                float maxDelayF = (float)p.filterStages * p.overallQ * (float)sr
                                   / (juce::MathConstants<float>::pi * fundamental);
                 maxDelayF = std::min (maxDelayF, (float)kMaxPreDelaySamples);
 

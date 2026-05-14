@@ -201,13 +201,11 @@ void ResosynAudioProcessorEditor::updatePhaseAlignLatencyLabel()
         return;
     }
 
-    float Q        = apvts.getRawParameterValue ("filterQ")->load();
-    int   stages   = (int)apvts.getRawParameterValue ("filterOrder")->load() + 1;
-    float sr       = (float)audioProcessor.getSampleRate();
-    if (sr <= 0.0f) sr = 44100.0f;
+    float Q      = apvts.getRawParameterValue ("filterQ")->load();
+    int   stages = (int)apvts.getRawParameterValue ("filterOrder")->load() + 1;
 
-    float latSamples = (float)stages * Q / (juce::MathConstants<float>::pi * 440.0f);
-    float latMs      = latSamples / sr * 1000.0f;
+    // group delay at ω₀ for a 2nd-order bandpass = Q/(π·f) seconds per stage
+    float latMs = (float)stages * Q * 1000.0f / (juce::MathConstants<float>::pi * 440.0f);
 
     phaseAlignLatencyLabel.setText (juce::String (latMs, 1) + "ms",
                                     juce::dontSendNotification);
