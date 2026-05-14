@@ -16,24 +16,20 @@ public:
     {
         auto b = getLocalBounds().toFloat();
         g.fillAll (juce::Colour (0xff141420));
-
         if (data == nullptr) return;
 
         const float barW = b.getWidth() / (float)numBars;
-
         for (int k = 0; k < numBars; ++k)
         {
-            float gain  = juce::jlimit (0.0f, 1.0f, data[k]);
-            float barH  = gain * (b.getHeight() - 14.0f); // leave 14px for labels
-            float x     = k * barW;
-            float top   = b.getHeight() - 14.0f - barH;
+            float gain = juce::jlimit (0.0f, 1.0f, data[k]);
+            float barH = gain * (b.getHeight() - 14.0f);
+            float x    = k * barW;
 
             juce::Colour fill = (k % 2 == 0) ? juce::Colour (0xff5566dd)
                                               : juce::Colour (0xff3344bb);
             g.setColour (fill);
-            g.fillRect (x + 1.0f, top, barW - 2.0f, barH);
+            g.fillRect (x + 1.0f, b.getHeight() - 14.0f - barH, barW - 2.0f, barH);
 
-            // Label every 4th harmonic plus the last
             if (k % 4 == 0 || k == numBars - 1)
             {
                 g.setColour (juce::Colours::grey);
@@ -55,7 +51,6 @@ private:
     void applyMouse (const juce::MouseEvent& e)
     {
         if (data == nullptr || numBars == 0) return;
-
         float barW = (float)getWidth() / (float)numBars;
         int   k    = juce::jlimit (0, numBars - 1, (int)((float)e.x / barW));
         float gain = juce::jlimit (0.0f, 1.0f,
@@ -68,6 +63,7 @@ private:
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Content component shown inside the DocumentWindow popup.
+// Window should be sized 760 × 540.
 // ─────────────────────────────────────────────────────────────────────────────
 class HarmonicEditorContent : public juce::Component
 {
@@ -75,7 +71,6 @@ public:
     explicit HarmonicEditorContent (ResosynAudioProcessor& proc)
         : processor (proc)
     {
-        // Header buttons
         snapshotABtn.setToggleState (true, juce::dontSendNotification);
         snapshotABtn.setRadioGroupId (1);
         snapshotABtn.setClickingTogglesState (true);
@@ -90,41 +85,48 @@ public:
         for (auto* b : { &snapshotABtn, &snapshotBBtn, &analyzeBtn })
             addAndMakeVisible (b);
 
-        // Gain bars
-        gainBars.onChange = [this] { /* data already written; audio thread will pick it up */ };
+        gainBars.onChange = [this] {};
         addAndMakeVisible (gainBars);
         refreshGainBars();
 
-        // Per-harmonic Q-mult sliders
         juce::NormalisableRange<double> qRange (0.1, 50.0);
         qRange.setSkewForCentre (1.0);
-
-        // Per-harmonic detune sliders
-        juce::NormalisableRange<double> detRange (-100.0, 100.0);
+        const juce::NormalisableRange<double> detRange  (-100.0, 100.0);
+        const juce::NormalisableRange<double> freqRange (-24.0,   24.0);
 
         for (int k = 0; k < kNumHarmonics; ++k)
         {
+            auto setupSlider = [&](juce::Slider& s, const char* tip) {
+                s.setSliderStyle (juce::Slider::LinearVertical);
+                s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+                s.setTooltip (tip + juce::String (" H") + juce::String (k + 1));
+                addAndMakeVisible (s);
+            };
+
             auto& qs = qSliders[(size_t)k];
-            qs.setSliderStyle (juce::Slider::LinearVertical);
-            qs.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+            setupSlider (qs, "Q×");
             qs.setNormalisableRange (qRange);
             qs.setValue (processor.perHarmonicQMult[(size_t)k], juce::dontSendNotification);
-            qs.setTooltip ("Harmonic " + juce::String (k + 1) + " Q×");
             qs.onValueChange = [this, k] {
                 processor.perHarmonicQMult[(size_t)k] = (float)qSliders[(size_t)k].getValue();
             };
-            addAndMakeVisible (qs);
 
             auto& ds = detSliders[(size_t)k];
-            ds.setSliderStyle (juce::Slider::LinearVertical);
-            ds.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+            setupSlider (ds, "Det");
             ds.setNormalisableRange (detRange);
             ds.setValue (processor.perHarmonicDetuneCents[(size_t)k], juce::dontSendNotification);
-            ds.setTooltip ("Harmonic " + juce::String (k + 1) + " detune (cents)");
             ds.onValueChange = [this, k] {
                 processor.perHarmonicDetuneCents[(size_t)k] = (float)detSliders[(size_t)k].getValue();
             };
-            addAndMakeVisible (ds);
+
+            auto& fs = freqSliders[(size_t)k];
+            setupSlider (fs, "Freq");
+            fs.setNormalisableRange (freqRange);
+            fs.setNumDecimalPlacesToDisplay (0);
+            fs.setValue (processor.perHarmonicFreqSemitones[(size_t)k], juce::dontSendNotification);
+            fs.onValueChange = [this, k] {
+                processor.perHarmonicFreqSemitones[(size_t)k] = (float)freqSliders[(size_t)k].getValue();
+            };
         }
     }
 
@@ -132,67 +134,60 @@ public:
     {
         auto b = getLocalBounds().reduced (8);
 
-        // Header row
         auto header = b.removeFromTop (28);
         snapshotABtn.setBounds (header.removeFromLeft (36));
         header.removeFromLeft (4);
         snapshotBBtn.setBounds (header.removeFromLeft (36));
         header.removeFromLeft (8);
-        analyzeBtn.setBounds (header.removeFromRight (110));
+        analyzeBtn.setBounds (header.removeFromRight (130));
 
         b.removeFromTop (6);
-
-        // Gain bars
         gainBars.setBounds (b.removeFromTop (190));
         b.removeFromTop (8);
 
-        // Row layout: left label column (48px) + 32 slider columns
         const int colW = (b.getWidth() - 48) / kNumHarmonics;
 
         auto placeRow = [&](std::array<juce::Slider, kNumHarmonics>& sliders, int rowH) {
             auto row = b.removeFromTop (rowH);
-            row.removeFromLeft (48); // label space
+            row.removeFromLeft (48);
             for (int k = 0; k < kNumHarmonics; ++k)
                 sliders[(size_t)k].setBounds (row.removeFromLeft (colW));
             b.removeFromTop (4);
         };
 
-        placeRow (qSliders,  90);
-        placeRow (detSliders, 90);
+        placeRow (qSliders,   84);
+        placeRow (detSliders, 84);
+        placeRow (freqSliders, 84);
     }
 
     void paint (juce::Graphics& g) override
     {
         g.fillAll (juce::Colour (0xff1e1e2e));
 
+        // Row labels aligned to the left margin of each slider row
         auto b = getLocalBounds().reduced (8);
-        b.removeFromTop (34 + 6 + 190 + 8); // skip header + bars
+        b.removeFromTop (28 + 6 + 190 + 8);
 
-        // Row labels
-        auto labelFont = juce::Font (juce::FontOptions (11.0f));
-        g.setFont (labelFont);
+        g.setFont (juce::Font (juce::FontOptions (11.0f)));
         g.setColour (juce::Colours::silver);
 
-        auto labelBounds = b.removeFromTop (90);
-        g.drawText ("Q×", labelBounds.removeFromLeft (48).withTrimmedBottom (20),
-                    juce::Justification::centredRight);
-
-        b.removeFromTop (4);
-        auto detBounds = b.removeFromTop (90);
-        g.drawText ("Det", detBounds.removeFromLeft (48).withTrimmedBottom (20),
-                    juce::Justification::centredRight);
+        for (const char* lbl : { "Q×", "Det", "Freq" })
+        {
+            auto row = b.removeFromTop (84);
+            g.drawText (lbl, row.removeFromLeft (46), juce::Justification::centredRight);
+            b.removeFromTop (4);
+        }
     }
 
-    // Called by the editor after analysis completes so sliders reflect new data.
+    // Refresh all controls from processor arrays (call after analysis or external edits).
     void refreshFromProcessor()
     {
         refreshGainBars();
         for (int k = 0; k < kNumHarmonics; ++k)
         {
-            qSliders  [(size_t)k].setValue (processor.perHarmonicQMult        [(size_t)k],
-                                            juce::dontSendNotification);
-            detSliders[(size_t)k].setValue (processor.perHarmonicDetuneCents  [(size_t)k],
-                                            juce::dontSendNotification);
+            qSliders  [(size_t)k].setValue (processor.perHarmonicQMult          [(size_t)k], juce::dontSendNotification);
+            detSliders[(size_t)k].setValue (processor.perHarmonicDetuneCents    [(size_t)k], juce::dontSendNotification);
+            freqSliders[(size_t)k].setValue(processor.perHarmonicFreqSemitones  [(size_t)k], juce::dontSendNotification);
         }
     }
 
@@ -207,6 +202,7 @@ private:
     GainBarEditor gainBars;
     std::array<juce::Slider, kNumHarmonics> qSliders;
     std::array<juce::Slider, kNumHarmonics> detSliders;
+    std::array<juce::Slider, kNumHarmonics> freqSliders;
 
     std::unique_ptr<juce::FileChooser> fileChooser;
 
@@ -228,9 +224,8 @@ private:
         fileChooser->launchAsync (
             juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
             [this] (const juce::FileChooser& fc) {
-                auto chosen = fc.getResult();
-                if (!chosen.existsAsFile()) return;
-                processor.analyzeFile (chosen);
+                if (!fc.getResult().existsAsFile()) return;
+                processor.analyzeFile (fc.getResult());
                 refreshFromProcessor();
             });
     }

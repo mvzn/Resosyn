@@ -115,7 +115,7 @@ ResosynAudioProcessorEditor::ResosynAudioProcessorEditor (ResosynAudioProcessor&
         harmonicWindow = std::make_unique<HarmonicDocWindow> (
             "Harmonic Editor", juce::Colour (0xff1e1e2e));
         harmonicWindow->setContentOwned (content, true);
-        harmonicWindow->setSize (760, 480);
+        harmonicWindow->setSize (760, 540);
         harmonicWindow->setResizable (false, false);
         harmonicWindow->setUsingNativeTitleBar (true);
         harmonicWindow->onClose = [this] {
@@ -168,15 +168,45 @@ ResosynAudioProcessorEditor::ResosynAudioProcessorEditor (ResosynAudioProcessor&
     initSectionLabel (masterLabel, "MASTER");
     addAndMakeVisible (masterLabel);
 
-    initRotary (masterGainSlider); addAndMakeVisible (masterGainSlider);
-    initRotary (polyphonySlider);  addAndMakeVisible (polyphonySlider);
-    polyphonySlider.setRange (1, kMaxVoices, 1);
+    masterGainSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    masterGainSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 52, 20);
+    addAndMakeVisible (masterGainSlider);
 
-    initKnobLabel (masterGainLabel, "Gain");   addAndMakeVisible (masterGainLabel);
-    initKnobLabel (polyphonyLabel,  "Voices"); addAndMakeVisible (polyphonyLabel);
+    polyphonySlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    polyphonySlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 36, 20);
+    polyphonySlider.setRange (1, kMaxVoices, 1);
+    addAndMakeVisible (polyphonySlider);
+
+    auto initRowLabel = [](juce::Label& l, const juce::String& text) {
+        l.setText (text, juce::dontSendNotification);
+        l.setFont (juce::Font (juce::FontOptions (11.0f)));
+        l.setJustificationType (juce::Justification::centredRight);
+        l.setColour (juce::Label::textColourId, juce::Colours::silver);
+    };
+    initRowLabel (masterGainLabel, "Gain");   addAndMakeVisible (masterGainLabel);
+    initRowLabel (polyphonyLabel,  "Voices"); addAndMakeVisible (polyphonyLabel);
 
     masterGainAttach = std::make_unique<APVTS::SliderAttachment> (apvts, "masterGain", masterGainSlider);
     polyphonyAttach  = std::make_unique<APVTS::SliderAttachment> (apvts, "polyphony",  polyphonySlider);
+
+    // ── Analyze button (main window) ──────────────────────────────────────────
+    analyzeButton.setButtonText ("Analyze File → Snapshot A");
+    analyzeButton.onClick = [this] {
+        mainAnalyzeChooser = std::make_unique<juce::FileChooser> (
+            "Open audio file for analysis",
+            juce::File::getSpecialLocation (juce::File::userHomeDirectory),
+            audioProcessor.audioFormatWildcard());
+
+        mainAnalyzeChooser->launchAsync (
+            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+            [this] (const juce::FileChooser& fc) {
+                if (!fc.getResult().existsAsFile()) return;
+                audioProcessor.analyzeFile (fc.getResult());
+                if (harmonicContent != nullptr)
+                    harmonicContent->refreshFromProcessor();
+            });
+    };
+    addAndMakeVisible (analyzeButton);
 
     // ── Sampler ───────────────────────────────────────────────────────────────
     initSectionLabel (samplerLabel, "SAMPLER");
@@ -289,7 +319,6 @@ void ResosynAudioProcessorEditor::resized()
     placeKnob (filterStretchSlider,   filterStretchLabel,   col1 + 10,  row0 + 138);
     placeKnob (filterSpreadSlider,    filterSpreadLabel,    col1 + 90,  row0 + 138);
     placeKnob (harmonicCountSlider,   harmonicCountLabel,   col1 + 170, row0 + 138);
-    harmonicsButton.setBounds         (col1 + 6,            row0 + 196, W - 12, 18);
 
     // ── Envelope ──────────────────────────────────────────────────────────────
     envelopeLabel.setBounds (col2 + 6, row0 + 4, W - 12, 18);
@@ -307,8 +336,15 @@ void ResosynAudioProcessorEditor::resized()
 
     // ── Master ────────────────────────────────────────────────────────────────
     masterLabel.setBounds (col1 + 6, row1 + 4, W - 12, 18);
-    placeKnob (masterGainSlider, masterGainLabel, col1 + 10, row1 + 26);
-    placeKnob (polyphonySlider,  polyphonyLabel,  col1 + 90, row1 + 26);
+    {
+        const int lblW = 52, slX = col1 + 6 + lblW + 4, slW = W - 12 - lblW - 4;
+        masterGainLabel.setBounds (col1 + 6, row1 + 28, lblW, 22);
+        masterGainSlider.setBounds (slX, row1 + 28, slW, 22);
+        polyphonyLabel.setBounds   (col1 + 6, row1 + 56, lblW, 22);
+        polyphonySlider.setBounds  (slX, row1 + 56, slW, 22);
+    }
+    harmonicsButton.setBounds (col1 + 6, row1 + 90,  W - 12, 22);
+    analyzeButton.setBounds   (col1 + 6, row1 + 118, W - 12, 22);
 
     // ── Sampler ───────────────────────────────────────────────────────────────
     samplerLabel.setBounds            (col2 + 6,  row1 + 4,  W - 12, 18);

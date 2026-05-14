@@ -65,8 +65,10 @@ private:
     };
 
     juce::TextButton harmonicsButton;
-    std::unique_ptr<HarmonicDocWindow> harmonicWindow;
-    HarmonicEditorContent* harmonicContent = nullptr; // owned by harmonicWindow
+    juce::TextButton analyzeButton;
+    std::unique_ptr<juce::FileChooser>   mainAnalyzeChooser;
+    std::unique_ptr<HarmonicDocWindow>   harmonicWindow;
+    HarmonicEditorContent*               harmonicContent = nullptr; // owned by harmonicWindow
 
     // ── Morph ────────────────────────────────────────────────────────────────
     juce::Label  morphLabel;
