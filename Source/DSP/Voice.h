@@ -8,8 +8,10 @@
 class Voice
 {
 public:
-    // Fade-out applied to a stolen voice before the new note fires.
-    static constexpr int kStealFadeLen = 128;
+    static constexpr int kStealFadeLen       = 128;
+    static constexpr int kPhaseAlignBufSize  = 8192;   // must be power-of-two
+    static constexpr int kRingBufMask        = kPhaseAlignBufSize - 1;
+    static constexpr int kMaxPreDelaySamples = 4096;
 
     void prepare (double sampleRate, int maxBlockSize)
     {
@@ -101,13 +103,43 @@ public:
             for (int i = 0; i < n; ++i)
                 excBuf[i] *= envelope.getNextSample();
 
+            for (int i = 0; i < n; ++i)
+                excRingBuf[(ringWritePos + i) & kRingBufMask] = excBuf[i];
+
             std::memset (tmpL, 0, sizeof (float) * (size_t)n);
             std::memset (tmpR, 0, sizeof (float) * (size_t)n);
 
-            if (p.filterType == 1)
-                filterBank.processPeak (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains, p.filterStages);
+            if (p.phaseAlign)
+            {
+                int preDelays[kNumHarmonics];
+                float maxDelayF = (float)p.filterStages * p.overallQ
+                                  / (juce::MathConstants<float>::pi * fundamental);
+                maxDelayF = std::min (maxDelayF, (float)kMaxPreDelaySamples);
+
+                for (int k = 0; k < kNumHarmonics; ++k)
+                {
+                    float harmN = (float)(k + 1);
+                    preDelays[k] = (int)(maxDelayF * (1.0f - 1.0f / harmN) + 0.5f);
+                }
+
+                if (p.filterType == 1)
+                    filterBank.processAlignedPeak (excRingBuf, kRingBufMask, ringWritePos,
+                                                   preDelays, tmpL, tmpR, n,
+                                                   p.filterSpread, blendedGains, p.filterStages);
+                else
+                    filterBank.processAligned (excRingBuf, kRingBufMask, ringWritePos,
+                                               preDelays, tmpL, tmpR, n,
+                                               p.filterSpread, blendedGains, p.filterStages);
+            }
             else
-                filterBank.process (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains, p.filterStages);
+            {
+                if (p.filterType == 1)
+                    filterBank.processPeak (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains, p.filterStages);
+                else
+                    filterBank.process (excBuf, tmpL, tmpR, n, p.filterSpread, blendedGains, p.filterStages);
+            }
+
+            ringWritePos = (ringWritePos + n) & kRingBufMask;
 
             // Apply steal fade — ramp down over kStealFadeLen samples before firing pending note.
             if (stealFadeRemain > 0)
@@ -164,6 +196,10 @@ private:
     double samplerPhase       = 0.0;
     bool   samplerPingPongFwd = true;
 
+    // Phase align ring buffer (stores envelope-applied excitation history)
+    float excRingBuf[kPhaseAlignBufSize] {};
+    int   ringWritePos = 0;
+
     // Steal fade state
     int      stealFadeRemain  = 0;
     bool     hasPendingNote   = false;
@@ -190,6 +226,8 @@ private:
         samplerPingPongFwd= true;
         hasPendingNote    = false;
         stealFadeRemain   = 0;
+        ringWritePos      = 0;
+        std::memset (excRingBuf, 0, sizeof (excRingBuf));
 
         envelope.reset();
         envelope.noteOn();

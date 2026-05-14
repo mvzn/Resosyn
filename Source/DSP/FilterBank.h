@@ -150,6 +150,109 @@ public:
         }
     }
 
+    // Phase-aligned bandpass path. Reads per-harmonic delayed excitation from a
+    // ring buffer so all harmonics exit the filter in phase.
+    void processAligned (const float* ringBuf, int ringBufMask,
+                         int ringReadBase, const int* preDelays,
+                         float* outL, float* outR, int numSamples,
+                         float spread, const float* gains, int numStages) noexcept
+    {
+        const float invN    = 1.0f / (float)numSamples;
+        const int   bufSize = ringBufMask + 1;
+
+        for (int k = 0; k < kSize; ++k)
+        {
+            const float db0 = (b0[k] - prevB0[k]) * invN;
+            const float db2 = (b2[k] - prevB2[k]) * invN;
+            const float da1 = (a1[k] - prevA1[k]) * invN;
+            const float da2 = (a2[k] - prevA2[k]) * invN;
+
+            float b0k = prevB0[k], b2k = prevB2[k], a1k = prevA1[k], a2k = prevA2[k];
+            const float gainK = gains[k];
+
+            float pan  = spread * ((k & 1) ? 0.5f : -0.5f);
+            float panL = juce::jlimit (0.0f, 1.0f, 0.5f - pan);
+            float panR = juce::jlimit (0.0f, 1.0f, 0.5f + pan);
+            float gainL = gainK * std::sqrt (panL);
+            float gainR = gainK * std::sqrt (panR);
+
+            float st1[8], st2[8];
+            for (int st = 0; st < numStages; ++st) { st1[st] = s1[st][k]; st2[st] = s2[st][k]; }
+
+            const int delay = preDelays[k];
+
+            for (int i = 0; i < numSamples; ++i)
+            {
+                b0k += db0; b2k += db2; a1k += da1; a2k += da2;
+
+                float x = ringBuf[(ringReadBase + i - delay + bufSize) & ringBufMask];
+                for (int st = 0; st < numStages; ++st)
+                {
+                    float y = b0k * x + st1[st];
+                    st1[st] = st2[st] - a1k * y;
+                    st2[st] = b2k * x - a2k * y;
+                    x = y;
+                }
+                outL[i] += x * gainL;
+                outR[i] += x * gainR;
+            }
+
+            for (int st = 0; st < numStages; ++st) { s1[st][k] = st1[st]; s2[st][k] = st2[st]; }
+            for (int st = numStages; st < 8; ++st) { s1[st][k] = s2[st][k] = 0.0f; }
+        }
+    }
+
+    // Phase-aligned peak EQ path.
+    void processAlignedPeak (const float* ringBuf, int ringBufMask,
+                             int ringReadBase, const int* preDelays,
+                             float* outL, float* outR, int numSamples,
+                             float spread, const float* gains, int numStages) noexcept
+    {
+        const float invN    = 1.0f / (float)numSamples;
+        const int   bufSize = ringBufMask + 1;
+
+        for (int k = 0; k < kSize; ++k)
+        {
+            const float db0 = (b0[k] - prevB0[k]) * invN;
+            const float db2 = (b2[k] - prevB2[k]) * invN;
+            const float da1 = (a1[k] - prevA1[k]) * invN;
+            const float da2 = (a2[k] - prevA2[k]) * invN;
+
+            float b0k = prevB0[k], b2k = prevB2[k], a1k = prevA1[k], a2k = prevA2[k];
+            const float gainK = gains[k];
+
+            float pan  = spread * ((k & 1) ? 0.5f : -0.5f);
+            float panL = juce::jlimit (0.0f, 1.0f, 0.5f - pan);
+            float panR = juce::jlimit (0.0f, 1.0f, 0.5f + pan);
+            float gainL = gainK * std::sqrt (panL);
+            float gainR = gainK * std::sqrt (panR);
+
+            float st1[8], st2[8];
+            for (int st = 0; st < numStages; ++st) { st1[st] = s1[st][k]; st2[st] = s2[st][k]; }
+
+            const int delay = preDelays[k];
+
+            for (int i = 0; i < numSamples; ++i)
+            {
+                b0k += db0; b2k += db2; a1k += da1; a2k += da2;
+
+                float x = ringBuf[(ringReadBase + i - delay + bufSize) & ringBufMask];
+                for (int st = 0; st < numStages; ++st)
+                {
+                    float y = b0k * x + st1[st];
+                    st1[st] = a1k * (x - y) + st2[st];
+                    st2[st] = b2k * x - a2k * y;
+                    x = y;
+                }
+                outL[i] += x * gainL;
+                outR[i] += x * gainR;
+            }
+
+            for (int st = 0; st < numStages; ++st) { s1[st][k] = st1[st]; s2[st][k] = st2[st]; }
+            for (int st = numStages; st < 8; ++st) { s1[st][k] = s2[st][k] = 0.0f; }
+        }
+    }
+
     // Peak EQ process path. Uses b1=a1 property; coefficients interpolated as above.
     void processPeak (const float* input,
                       float*       outL,
