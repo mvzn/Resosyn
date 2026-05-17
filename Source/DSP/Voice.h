@@ -66,12 +66,6 @@ public:
         if (p.filterDetuneCents != 0.0f)
             fundamental *= std::pow (2.0f, p.filterDetuneCents / 1200.0f);
 
-        static const float kZero32[kNumHarmonics] = {};
-        static const float kOne32[kNumHarmonics]  = {
-            1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-            1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
-        };
-
         float* excBuf = excitationBuf.getWritePointer (0);
         float* outL   = output.getWritePointer (0) + startSample;
         float* outR   = output.getWritePointer (1) + startSample;
