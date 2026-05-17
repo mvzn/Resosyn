@@ -1,11 +1,18 @@
 name: Build
 
+# Cost control: Linux runs on every push/PR (cheap, 1× minutes).
+# Windows (2×) and macOS (10×) only run on manual trigger from the Actions tab.
 on:
   push:
     branches: [main, cmake-migration]
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      linux_only:
+        description: 'Linux only (skip Windows + macOS even on manual run)'
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -18,7 +25,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Push/PR: Linux only. Manual (workflow_dispatch): all three unless linux_only is checked.
+        os: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.linux_only) && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest", "macos-latest"]') }}
         build_type: [Release]
 
     steps:

@@ -18,11 +18,14 @@ Universal macOS binary (x86_64 + arm64). Release build only.
 
 ## When it runs
 
-| Trigger | Condition |
-|---|---|
-| Push | Any commit to `main` or `cmake-migration` |
-| Pull request | Any PR targeting `main` |
-| Manual | "Run workflow" button in the Actions tab |
+| Trigger | Linux | Windows | macOS |
+|---|---|---|---|
+| Push to `main` / `cmake-migration` | ✓ | — | — |
+| Pull request targeting `main` | ✓ | — | — |
+| Manual ("Run workflow" button) | ✓ | ✓ | ✓ |
+| Manual with **Linux only** checked | ✓ | — | — |
+
+**Why this split:** Windows costs 2× and macOS costs 10× Linux minutes on private repos. Auto-builds stay cheap; cross-platform builds happen on demand.
 
 Rapid pushes auto-cancel earlier in-flight runs (`concurrency` block). Add `[skip ci]` to a commit message to skip CI entirely.
 
@@ -41,30 +44,37 @@ You'll see three parallel jobs (`Linux`, `Windows`, `macOS`). Click any one to w
 
 ---
 
-## How to manually trigger a build
+## How to manually trigger a cross-platform build
 
-Useful for testing workflow changes without committing dummy code.
+This is the only way to build for Windows and macOS — push and PR triggers run Linux only to save CI minutes.
 
-**Web UI:** Actions tab → "Build" workflow on the left → "Run workflow" dropdown → pick a branch → "Run workflow".
+**Web UI:** Actions tab → "Build" workflow on the left → "Run workflow" dropdown → pick a branch → leave **"Linux only"** unchecked → "Run workflow".
+
+To rebuild only Linux (e.g., testing workflow YAML changes), check the "Linux only" box.
 
 **CLI:**
 ```bash
-gh workflow run build --ref cmake-migration
-gh run watch                          # follow the latest run live
+gh workflow run build --ref cmake-migration                  # all three OSes
+gh workflow run build --ref cmake-migration -f linux_only=true  # Linux only
+gh run watch                                                  # follow the latest run live
 ```
 
 ---
 
 ## How to download the built plugins
 
-Wait for the workflow to finish (green check on all three jobs).
+Wait for the workflow to finish (green check on every job in the run).
 
 **Web UI:** click the workflow run → scroll to **Artifacts** at the bottom → click any to download as a zip.
 
-You'll see 7 artifacts per successful run:
-- `Resosyn-Linux-VST3`, `Resosyn-Linux-Standalone`
-- `Resosyn-Windows-VST3`, `Resosyn-Windows-Standalone`
-- `Resosyn-macOS-VST3`, `Resosyn-macOS-Standalone`, `Resosyn-macOS-AU`
+**Artifact count depends on what ran:**
+- Push / PR / "Linux only" manual: 2 plugin artifacts (`Resosyn-Linux-VST3`, `Resosyn-Linux-Standalone`)
+- Full manual cross-platform run: 7 plugin artifacts:
+  - `Resosyn-Linux-VST3`, `Resosyn-Linux-Standalone`
+  - `Resosyn-Windows-VST3`, `Resosyn-Windows-Standalone`
+  - `Resosyn-macOS-VST3`, `Resosyn-macOS-Standalone`, `Resosyn-macOS-AU`
+
+Plus one `build-log-<OS>-<run_number>` log artifact per OS that ran (see next section).
 
 **CLI:**
 ```bash
@@ -131,24 +141,30 @@ If a cache becomes corrupted, delete it manually: Actions tab → **Caches** in 
 
 ## CI minute cost (private repos only)
 
-- Linux: 1× minutes used (cheap)
-- Windows: 2× minutes used
-- macOS: 10× minutes used (the expensive one)
+| OS | Multiplier |
+|---|---|
+| Linux | 1× |
+| Windows | 2× |
+| macOS | 10× |
 
-This repo is currently building on all three on every push. If minute usage becomes a concern, gate macOS behind tags:
+**Default behavior is already cost-optimized:** push/PR runs Linux only. Windows and macOS only consume minutes when you manually trigger a build.
+
+If you want to ALSO auto-build all three on tag pushes (e.g., for releases), add a tag trigger:
 
 ```yaml
-# in build.yml, under the matrix:
-strategy:
-  matrix:
-    include:
-      - os: ubuntu-latest
-      - os: windows-latest
-      - os: macos-latest
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+on:
+  push:
+    branches: [main]
+    tags: ['v*']    # also runs on v1.0.0, v1.2.3, etc.
 ```
 
-Public repos: all OSes free, no limit.
+…and change the matrix expression to include tags:
+
+```yaml
+os: ${{ fromJSON((github.event_name != 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/') || inputs.linux_only) && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest", "macos-latest"]') }}
+```
+
+Public repos: all OSes free, no limit — but the manual-only gate still saves wall-clock time.
 
 ---
 
