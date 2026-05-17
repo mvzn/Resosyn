@@ -133,7 +133,13 @@ Retention: 30 days.
 
 ## Caching
 
-First build per OS downloads JUCE (~2 min). Subsequent builds restore from cache (`build/_deps`) keyed on `runner.os` + JUCE tag. Bumping `GIT_TAG` in `CMakeLists.txt` invalidates the cache automatically.
+Two independent caches per OS:
+
+1. **JUCE source cache** (`build/_deps`) — keyed on `runner.os` + JUCE tag. Saves the ~2 min git clone. Bumping `GIT_TAG` in `CMakeLists.txt` invalidates automatically.
+
+2. **sccache (compiler object cache)** — wraps `cc`/`c++`/`cl.exe` and caches compiled objects by input hash. JUCE module sources don't change between your pushes, so they cache-hit fully. Expected savings on a typical "edit a few files" push: ~80–90% of compile time (only your changed `.cpp` files recompile). Max 500 MB per OS; LRU-evicted by GitHub after 7 days of no access.
+
+Cache hit rate is logged at the end of every build artifact log (`--- sccache stats ---` section). Look for `Cache hits: N / M`. First-run-after-cache-flush hits 0; steady-state usually 80%+.
 
 If a cache becomes corrupted, delete it manually: Actions tab → **Caches** in the left sidebar.
 
