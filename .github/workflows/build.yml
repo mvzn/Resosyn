@@ -56,13 +56,45 @@ jobs:
           key: juce-${{ runner.os }}-8.0.6
 
       - name: Configure
-        run: >
-          cmake -B build -G Ninja
-          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-          -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+        shell: bash
+        run: |
+          mkdir -p logs
+          LOG="logs/build-${{ runner.os }}-${{ github.run_number }}-${{ github.sha }}.log"
+          {
+            echo "=== Resosyn build log ==="
+            echo "Run        : ${{ github.run_number }}"
+            echo "Commit     : ${{ github.sha }}"
+            echo "Branch/ref : ${{ github.ref }}"
+            echo "OS         : ${{ runner.os }} ($RUNNER_OS)"
+            echo "Build type : ${{ matrix.build_type }}"
+            echo "Timestamp  : $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "========================="
+            echo
+            echo "--- CMake configure ---"
+          } | tee "$LOG"
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" 2>&1 | tee -a "$LOG"
+          echo "LOG_FILE=$LOG" >> "$GITHUB_ENV"
 
       - name: Build
-        run: cmake --build build --config ${{ matrix.build_type }} --parallel
+        shell: bash
+        run: |
+          echo >> "$LOG_FILE"
+          echo "--- CMake build ---" | tee -a "$LOG_FILE"
+          cmake --build build --config ${{ matrix.build_type }} --parallel 2>&1 | tee -a "$LOG_FILE"
+          echo >> "$LOG_FILE"
+          echo "--- Build outputs ---" | tee -a "$LOG_FILE"
+          (find build/Resosyn_artefacts -maxdepth 6 -type f -o -type d 2>/dev/null | head -60) | tee -a "$LOG_FILE" || true
+
+      - name: Upload build log
+        if: always()    # upload even on failure for debugging
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ runner.os }}-${{ github.run_number }}
+          path: logs/
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Upload VST3
         uses: actions/upload-artifact@v4
