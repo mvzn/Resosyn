@@ -18,45 +18,28 @@ Universal macOS binary (x86_64 + arm64). Release build only.
 
 ## When it runs
 
+All builds are **manual-only** — nothing runs automatically on push or PR.
+
 | Trigger | Linux | Windows | macOS |
 |---|---|---|---|
-| Push to `main` / `cmake-migration` | ✓ | — | — |
-| Pull request targeting `main` | ✓ | — | — |
 | Manual ("Run workflow" button) | ✓ | ✓ | ✓ |
 | Manual with **Linux only** checked | ✓ | — | — |
 
-**Why this split:** Windows costs 2× and macOS costs 10× Linux minutes on private repos. Auto-builds stay cheap; cross-platform builds happen on demand.
-
-Rapid pushes auto-cancel earlier in-flight runs (`concurrency` block). Add `[skip ci]` to a commit message to skip CI entirely.
+Trigger from the Actions tab → select the "Build" workflow → "Run workflow" dropdown.
 
 ---
 
-## How to push and watch a build
-
-```bash
-git push                              # triggers if branch matches the list above
-gh workflow view build --web          # open Actions tab in browser (gh CLI)
-```
-
-Or in the GitHub UI: repo → **Actions** tab → click the latest run.
-
-You'll see three parallel jobs (`Linux`, `Windows`, `macOS`). Click any one to watch logs stream live.
-
----
-
-## How to manually trigger a cross-platform build
-
-This is the only way to build for Windows and macOS — push and PR triggers run Linux only to save CI minutes.
+## How to trigger a build
 
 **Web UI:** Actions tab → "Build" workflow on the left → "Run workflow" dropdown → pick a branch → leave **"Linux only"** unchecked → "Run workflow".
 
-To rebuild only Linux (e.g., testing workflow YAML changes), check the "Linux only" box.
+To build only Linux (e.g., testing workflow YAML changes), check the "Linux only" box.
 
 **CLI:**
 ```bash
-gh workflow run build --ref cmake-migration                  # all three OSes
-gh workflow run build --ref cmake-migration -f linux_only=true  # Linux only
-gh run watch                                                  # follow the latest run live
+gh workflow run build --ref main                        # all three OSes
+gh workflow run build --ref main -f linux_only=true     # Linux only
+gh run watch                                            # follow the latest run live
 ```
 
 ---

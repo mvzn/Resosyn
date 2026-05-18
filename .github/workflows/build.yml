@@ -1,16 +1,11 @@
 name: Build
 
-# Cost control: Linux runs on every push/PR (cheap, 1× minutes).
-# Windows (2×) and macOS (10×) only run on manual trigger from the Actions tab.
+# All builds are manual-only. Trigger from the Actions tab → "Run workflow".
 on:
-  push:
-    branches: [main, cmake-migration]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
     inputs:
       linux_only:
-        description: 'Linux only (skip Windows + macOS even on manual run)'
+        description: 'Linux only (skip Windows + macOS)'
         type: boolean
         default: false
 
