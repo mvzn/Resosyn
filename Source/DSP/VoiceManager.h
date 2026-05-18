@@ -1,11 +1,16 @@
 #pragma once
 #include <JuceHeader.h>
+#include <atomic>
 #include "Voice.h"
 #include "VoiceParameters.h"
 
 class VoiceManager
 {
 public:
+    // Most-recently-played MIDI note. Updated on noteOn; read by the UI for
+    // the filter response display reference pitch. Defaults to A4 (69).
+    std::atomic<int> lastPlayedNote { 69 };
+
     void prepare (double sampleRate, int maxBlockSize)
     {
         for (auto& v : voices)
@@ -57,6 +62,8 @@ private:
 
     void handleNoteOn (int note, float velocity, int polyphony)
     {
+        lastPlayedNote.store (note, std::memory_order_relaxed);
+
         // Release any non-ghost voice currently playing this note.
         for (auto& v : voices)
             if (v.isActive() && !v.isInRelease() && v.getMidiNote() == note)

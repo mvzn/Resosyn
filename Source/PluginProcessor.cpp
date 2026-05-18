@@ -188,9 +188,6 @@ VoiceParameters ResosynAudioProcessor::buildVoiceParameters() const noexcept
         return apvts.getRawParameterValue (id)->load();
     };
 
-    smoothedMasterGain; // ensure reference; actual advance happens below
-    float gainDb = get ("masterGain");
-
     VoiceParameters p;
     p.excitationMode       = (int)get ("excitationMode");
     p.noiseColour          = (int)get ("noiseColour");
@@ -301,29 +298,56 @@ void ResosynAudioProcessor::setStateInformation (const void* data, int sizeInByt
 
     apvts.replaceState (juce::ValueTree::fromXml (*xml));
 
+    // Stage all per-harmonic values in locals, then commit under the callback
+    // lock so the audio thread sees a consistent snapshot.
+    float newA[kNumHarmonics], newB[kNumHarmonics];
+    float newFreq[kNumHarmonics], newDet[kNumHarmonics], newQ[kNumHarmonics];
+    for (int k = 0; k < kNumHarmonics; ++k)
+    {
+        newA[k]    = 1.0f; newB[k]   = 0.0f;
+        newFreq[k] = 0.0f; newDet[k] = 0.0f; newQ[k] = 1.0f;
+    }
+
     if (auto* snapA = xml->getChildByName ("SnapshotA"))
         for (int k = 0; k < kNumHarmonics; ++k)
-            snapshotA[(size_t)k] = (float)snapA->getDoubleAttribute ("h" + juce::String (k), 1.0);
+            newA[k] = (float)snapA->getDoubleAttribute ("h" + juce::String (k), 1.0);
 
     if (auto* snapB = xml->getChildByName ("SnapshotB"))
         for (int k = 0; k < kNumHarmonics; ++k)
-            snapshotB[(size_t)k] = (float)snapB->getDoubleAttribute ("h" + juce::String (k), 0.0);
+            newB[k] = (float)snapB->getDoubleAttribute ("h" + juce::String (k), 0.0);
 
     if (auto* phFreq = xml->getChildByName ("PerHarmonicFreq"))
         for (int k = 0; k < kNumHarmonics; ++k)
-            perHarmonicFreqSemitones[(size_t)k] = (float)phFreq->getDoubleAttribute ("h" + juce::String (k), 0.0);
+            newFreq[k] = (float)phFreq->getDoubleAttribute ("h" + juce::String (k), 0.0);
 
     if (auto* phDet = xml->getChildByName ("PerHarmonicDet"))
         for (int k = 0; k < kNumHarmonics; ++k)
-            perHarmonicDetuneCents[(size_t)k] = (float)phDet->getDoubleAttribute ("h" + juce::String (k), 0.0);
+            newDet[k] = (float)phDet->getDoubleAttribute ("h" + juce::String (k), 0.0);
 
     if (auto* phQ = xml->getChildByName ("PerHarmonicQ"))
         for (int k = 0; k < kNumHarmonics; ++k)
-            perHarmonicQMult[(size_t)k] = (float)phQ->getDoubleAttribute ("h" + juce::String (k), 1.0);
+            newQ[k] = (float)phQ->getDoubleAttribute ("h" + juce::String (k), 1.0);
 
-    samplerFilePath = xml->getStringAttribute ("samplerFilePath");
-    if (samplerFilePath.isNotEmpty())
-        loadSamplerFile (juce::File (samplerFilePath));
+    {
+        const juce::ScopedLock sl (getCallbackLock());
+        for (int k = 0; k < kNumHarmonics; ++k)
+        {
+            snapshotA[(size_t)k]                = newA[k];
+            snapshotB[(size_t)k]                = newB[k];
+            perHarmonicFreqSemitones[(size_t)k] = newFreq[k];
+            perHarmonicDetuneCents  [(size_t)k] = newDet[k];
+            perHarmonicQMult        [(size_t)k] = newQ[k];
+        }
+    }
+
+    auto path = xml->getStringAttribute ("samplerFilePath");
+    if (path.isNotEmpty())
+        loadSamplerFile (juce::File (path));  // takes its own lock
+}
+
+int ResosynAudioProcessor::getLastPlayedMidiNote() const noexcept
+{
+    return voiceManager.lastPlayedNote.load (std::memory_order_relaxed);
 }
 
 void ResosynAudioProcessor::loadSamplerFile (const juce::File& file)
@@ -333,10 +357,19 @@ void ResosynAudioProcessor::loadSamplerFile (const juce::File& file)
         formatManager.createReaderFor (file));
     if (reader == nullptr) return;
 
-    samplerBuffer.setSize ((int)reader->numChannels,
-                           (int)reader->lengthInSamples);
-    reader->read (&samplerBuffer, 0, (int)reader->lengthInSamples, 0, true, true);
-    samplerFilePath = file.getFullPathName();
+    // Read into a temporary buffer off the audio callback lock — disk I/O can
+    // take tens of ms and would cause an audio dropout if held inside the lock.
+    juce::AudioBuffer<float> tempBuffer ((int)reader->numChannels,
+                                          (int)reader->lengthInSamples);
+    reader->read (&tempBuffer, 0, (int)reader->lengthInSamples, 0, true, true);
+    auto path = file.getFullPathName();
+
+    // Brief lock just for the move-assign — VoiceParameters hands the audio
+    // thread a raw pointer to samplerBuffer, so the swap must be atomic w.r.t.
+    // processBlock.
+    const juce::ScopedLock sl (getCallbackLock());
+    samplerBuffer   = std::move (tempBuffer);
+    samplerFilePath = std::move (path);
 }
 
 //==============================================================================
@@ -445,20 +478,42 @@ void ResosynAudioProcessor::analyzeFile (const juce::File& file, SnapshotTarget 
 
     if (maxAmp <= 0.0f) return;
 
+    // Stage results in locals, then write the processor arrays under the audio
+    // callback lock. Keeps the FFT entirely off the lock; the actual array
+    // commit is tiny.
+    float newAmps   [kNumHarmonics] = {};
+    float newFreqSem[kNumHarmonics] = {};
+    float newDet    [kNumHarmonics] = {};
+    bool  hasFreq   [kNumHarmonics] = {};
+
     for (int k = 0; k < kNumHarmonics; ++k)
     {
         const float fn = (float)(k + 1) * f0;
-        float amp = harmonicAmps[(size_t)k] / maxAmp;
-        if (target == SnapshotTarget::A    || target == SnapshotTarget::Both) snapshotA[(size_t)k] = amp;
-        if (target == SnapshotTarget::B    || target == SnapshotTarget::Both) snapshotB[(size_t)k] = amp;
+        newAmps[k] = harmonicAmps[(size_t)k] / maxAmp;
 
         if (harmonicFreqs[(size_t)k] > 0.0f && fn > 0.0f)
         {
             const float devSemitones = 12.0f * std::log2 (harmonicFreqs[(size_t)k] / fn);
             const float coarse       = std::round (devSemitones);
             const float fine         = (devSemitones - coarse) * 100.0f;
-            perHarmonicFreqSemitones[(size_t)k] = juce::jlimit (-24.0f, 24.0f,  coarse);
-            perHarmonicDetuneCents  [(size_t)k] = juce::jlimit (-100.0f, 100.0f, fine);
+            newFreqSem[k] = juce::jlimit (-24.0f, 24.0f,  coarse);
+            newDet    [k] = juce::jlimit (-100.0f, 100.0f, fine);
+            hasFreq[k]    = true;
+        }
+    }
+
+    const juce::ScopedLock sl (getCallbackLock());
+    for (int k = 0; k < kNumHarmonics; ++k)
+    {
+        if (target == SnapshotTarget::A || target == SnapshotTarget::Both)
+            snapshotA[(size_t)k] = newAmps[k];
+        if (target == SnapshotTarget::B || target == SnapshotTarget::Both)
+            snapshotB[(size_t)k] = newAmps[k];
+
+        if (hasFreq[k])
+        {
+            perHarmonicFreqSemitones[(size_t)k] = newFreqSem[k];
+            perHarmonicDetuneCents  [(size_t)k] = newDet    [k];
         }
     }
 }

@@ -58,6 +58,10 @@ public:
     juce::String             samplerFilePath;
     void loadSamplerFile (const juce::File& file);
 
+    // Last MIDI note played — used by FilterResponseDisplay to centre the curve
+    // on the most-recent fundamental instead of a hardcoded A4.
+    int getLastPlayedMidiNote() const noexcept;
+
 private:
     VoiceManager voiceManager;
     juce::AudioFormatManager formatManager;

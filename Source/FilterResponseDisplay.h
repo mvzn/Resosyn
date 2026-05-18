@@ -63,14 +63,17 @@ public:
             }
         }
 
-        // Compute per-harmonic biquad coefficients at A4 (440 Hz), sr=44100 reference
+        // Reference pitch follows the most-recently-played MIDI note so the curve
+        // tracks what you're hearing instead of an arbitrary A4.
+        const int   lastNote     = processor.getLastPlayedMidiNote();
+        const float refFundNote  = 440.0f * std::pow (2.0f, (float)(lastNote - 69) / 12.0f);
+
         constexpr float kRefSr   = 44100.0f;
-        constexpr float kRefFund = 440.0f;
         const float twoPiOverSr  = 2.0f * juce::MathConstants<float>::pi / kRefSr;
         const float nyquist      = kRefSr * 0.49f;
         const float A            = std::pow (10.0f, perStageDB / 40.0f);
 
-        float refFund = kRefFund;
+        float refFund = refFundNote;
         if (detuneCents != 0.0f)
             refFund *= std::pow (2.0f, detuneCents / 1200.0f);
 
@@ -246,7 +249,8 @@ public:
             g.drawText (fLabelStrs[i], (int)freqToX (fLabels[i]) + 2, (int)b.getY() + 2, 28, 12,
                         juce::Justification::left);
 
-        g.drawText ("A4 ref", (int)b.getRight() - 38, (int)b.getY() + 2, 36, 12,
+        const auto refName = juce::MidiMessage::getMidiNoteName (lastNote, true, true, 4);
+        g.drawText (refName + " ref", (int)b.getRight() - 60, (int)b.getY() + 2, 58, 12,
                     juce::Justification::right);
     }
 
