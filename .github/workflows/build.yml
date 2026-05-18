@@ -61,7 +61,10 @@ jobs:
 
       # sccache caches compiled object files keyed on input hashes. JUCE modules
       # don't change between pushes → full cache hits → ~80-90% build-time savings.
+      # Skipped on Windows: sccache wraps cl.exe in a way that breaks /FS (PDB write
+      # serialization), causing juceaide's parallel build to fail with C1041.
       - name: Set up sccache (compiler cache)
+        if: runner.os != 'Windows'
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           variant: sccache
@@ -85,11 +88,14 @@ jobs:
             echo
             echo "--- CMake configure ---"
           } | tee "$LOG"
+          LAUNCHER_FLAGS=""
+          if [ "$RUNNER_OS" != "Windows" ]; then
+            LAUNCHER_FLAGS="-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
+          fi
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
-            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache 2>&1 | tee -a "$LOG"
+            $LAUNCHER_FLAGS 2>&1 | tee -a "$LOG"
           echo "LOG_FILE=$LOG" >> "$GITHUB_ENV"
 
       - name: Build
