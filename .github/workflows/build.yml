@@ -4,10 +4,15 @@ name: Build
 on:
   workflow_dispatch:
     inputs:
-      linux_only:
-        description: 'Linux only (skip Windows + macOS)'
-        type: boolean
-        default: false
+      platforms:
+        description: 'Which platforms to build'
+        type: choice
+        default: all
+        options:
+          - all
+          - linux
+          - windows
+          - macos
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -20,8 +25,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Push/PR: Linux only. Manual (workflow_dispatch): all three unless linux_only is checked.
-        os: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.linux_only) && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest", "macos-latest"]') }}
+        os: ${{ fromJSON(
+            inputs.platforms == 'linux'   && '["ubuntu-latest"]'  ||
+            inputs.platforms == 'windows' && '["windows-latest"]' ||
+            inputs.platforms == 'macos'   && '["macos-latest"]'   ||
+            '["ubuntu-latest", "windows-latest", "macos-latest"]'
+          ) }}
         build_type: [Release]
 
     steps:
