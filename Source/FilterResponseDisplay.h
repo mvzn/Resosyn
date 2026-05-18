@@ -108,64 +108,87 @@ public:
             }
         }
 
-        // Evaluate summed magnitude response at 256 log-spaced points (20 Hz–20 kHz)
-        static constexpr int   kNFreq   = 256;
-        static constexpr float kFMin    = 20.0f, kFMax = 20000.0f;
+        // 1024 log-spaced evaluation points (20 Hz–20 kHz).
+        // sin/cos precomputed once; complex H(ω) avoids two trig calls per harmonic per point.
+        static constexpr int   kNFreq = 1024;
+        static constexpr float kFMin  = 20.0f, kFMax = 20000.0f;
         const float logFMin = std::log (kFMin), logFMax = std::log (kFMax);
 
-        float evalCosW[kNFreq], evalCos2W[kNFreq];
+        float evalCosW[kNFreq], evalSinW[kNFreq], evalCos2W[kNFreq], evalSin2W[kNFreq];
         for (int i = 0; i < kNFreq; ++i)
         {
             float t   = (float)i / (float)(kNFreq - 1);
             float f   = std::exp (logFMin + t * (logFMax - logFMin));
             float w   = f * twoPiOverSr;
             float cw  = std::cos (w);
+            float sw  = std::sin (w);
             evalCosW[i]  = cw;
-            evalCos2W[i] = 2.0f * cw * cw - 1.0f; // cos(2ω) = 2cos²(ω)-1
+            evalSinW[i]  = sw;
+            evalCos2W[i] = 2.0f * cw * cw - 1.0f;  // cos(2ω) = 2cos²(ω)−1
+            evalSin2W[i] = 2.0f * sw * cw;           // sin(2ω) = 2sin(ω)cos(ω)
         }
 
-        float resp[kNFreq] = {};
+        // Complex accumulator: sum gain_k * H_k(ω)^stages across harmonics, then take |·|.
+        // Constructive/destructive interference between adjacent harmonics is exact here;
+        // magnitude-only summation ignores it entirely.
+        float resp_re[kNFreq] = {};
+        float resp_im[kNFreq] = {};
+
         for (int k = 0; k < kNumHarmonics; ++k)
         {
             if (gains[k] <= 0.0f) continue;
-            const auto& c     = coeffs[k];
-            float b0sq        = c.b0 * c.b0;
-            float b2sq        = c.b2 * c.b2;
-            float b0b2        = c.b0 * c.b2;
-            float a1sq        = c.a1 * c.a1;
-            float a2sq        = c.a2 * c.a2;
-            float a1_1pa2     = c.a1 * (1.0f + c.a2);
-            float a1_b0pb2    = c.a1 * (c.b0 + c.b2); // peak EQ numerator cross term
+            const auto& c = coeffs[k];
+            const float g = gains[k];
 
             for (int i = 0; i < kNFreq; ++i)
             {
-                float cosW  = evalCosW[i];
-                float cos2W = evalCos2W[i];
+                const float cw  = evalCosW[i],  sw  = evalSinW[i];
+                const float c2w = evalCos2W[i], s2w = evalSin2W[i];
 
-                float num   = (filterType == 1)
-                    ? b0sq + a1sq + b2sq + 2.0f * a1_b0pb2 * cosW + 2.0f * b0b2 * cos2W
-                    : b0sq + b2sq                                  + 2.0f * b0b2 * cos2W;
+                // Denominator: 1 + a1·z⁻¹ + a2·z⁻²  at z = e^jω
+                const float d_re = 1.0f + c.a1 * cw  + c.a2 * c2w;
+                const float d_im =       -c.a1 * sw  - c.a2 * s2w;
 
-                float den   = 1.0f + a1sq + a2sq + 2.0f * a1_1pa2 * cosW + 2.0f * c.a2 * cos2W;
-                float h2    = (den > 1e-10f) ? num / den : 0.0f;
-                float h     = std::sqrt (std::max (0.0f, h2));
+                // Numerator: bandpass b1=0; peak EQ b1=a1
+                float n_re, n_im;
+                if (isPeak)
+                {
+                    n_re = c.b0 + c.a1 * cw  + c.b2 * c2w;
+                    n_im =       -c.a1 * sw  - c.b2 * s2w;
+                }
+                else
+                {
+                    n_re = c.b0 + c.b2 * c2w;
+                    n_im =      - c.b2 * s2w;
+                }
 
-                float hN = h;
-                for (int st = 1; st < filterStages; ++st) hN *= h;
+                // H = N/D  (complex division)
+                const float d2 = d_re * d_re + d_im * d_im;
+                float h_re, h_im;
+                if (d2 > 1e-20f)
+                {
+                    const float inv = 1.0f / d2;
+                    h_re = (n_re * d_re + n_im * d_im) * inv;
+                    h_im = (n_im * d_re - n_re * d_im) * inv;
+                }
+                else { h_re = h_im = 0.0f; }
 
-                resp[i] += gains[k] * hN;
+                // H^stages  via repeated complex multiplication
+                float hr = h_re, hi = h_im;
+                for (int st = 1; st < filterStages; ++st)
+                {
+                    const float r = hr * h_re - hi * h_im;
+                    const float m = hr * h_im + hi * h_re;
+                    hr = r; hi = m;
+                }
+
+                // Peak EQ compensation: effective response = H^stages − compensation·dry.
+                // Dry signal is real-valued (constant 1 in freq domain), so subtract from re only.
+                hr -= peakComp;
+
+                resp_re[i] += g * hr;
+                resp_im[i] += g * hi;
             }
-        }
-
-        // Peak EQ: dry-subtraction adds a constant magnitude offset of comp*(1 - Σgain).
-        // (Approximation using summed magnitudes rather than complex sum.)
-        if (peakComp > 0.0f)
-        {
-            float sumGain = 0.0f;
-            for (int k = 0; k < kNumHarmonics; ++k) sumGain += gains[k];
-            const float dryOffset = peakComp * (1.0f - sumGain);
-            for (int i = 0; i < kNFreq; ++i)
-                resp[i] = std::max (0.0f, resp[i] + dryOffset);
         }
 
         // ── Draw ─────────────────────────────────────────────────────────────────
@@ -197,8 +220,9 @@ public:
         juce::Path fill, stroke;
         for (int i = 0; i < kNFreq; ++i)
         {
-            float db = 20.0f * std::log10 (std::max (resp[i], 1e-7f));
-            float t  = (float)i / (float)(kNFreq - 1);
+            float mag = std::sqrt (resp_re[i] * resp_re[i] + resp_im[i] * resp_im[i]);
+            float db  = 20.0f * std::log10 (std::max (mag, 1e-7f));
+            float t   = (float)i / (float)(kNFreq - 1);
             float x  = b.getX() + t * b.getWidth();
             float y  = dbToY (db);
 

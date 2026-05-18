@@ -8,3 +8,8 @@
 !/Source/
 !/prd.md
 !/.vscode/
+!/CMakeLists.txt
+!/.github/
+
+# But not the CMake build output
+/build/
