@@ -43,6 +43,12 @@ struct VoiceParameters
     float masterGainLinear;
     int   polyphony;            // 1–8
 
+    // Release fade (post-envelope cooldown to prevent click on flushState):
+    // 0=Off (instant), 1=Gain Ramp (A), 2=State Decay (B), 3=Pole Shrink (C), 4=Coef Ramp (D)
+    int   releaseFadeMode;
+    bool  releaseFadeWrapInGain; // if true, applies gain ramp on top of modes 2/3/4
+    float releaseFadeMs;
+
     const float* snapshotA;              // [kNumHarmonics] linear gains
     const float* snapshotB;              // [kNumHarmonics] linear gains
     const float* perHarmonicFreqSemitones; // [kNumHarmonics] ±24 semitone offset per harmonic

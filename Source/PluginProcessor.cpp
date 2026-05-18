@@ -129,6 +129,21 @@ juce::AudioProcessorValueTreeState::ParameterLayout ResosynAudioProcessor::creat
     layout.add (std::make_unique<juce::AudioParameterInt> (
         makePID ("polyphony"), "Polyphony", 1, kMaxVoices, kMaxVoices));
 
+    // Release fade (test feature — see Voice cooldown logic)
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        makePID ("releaseFadeMode"), "Release Fade",
+        juce::StringArray { "Off (instant)", "Gain Ramp", "State Decay", "Pole Shrink", "Coef Ramp" }, 1));
+
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        makePID ("releaseFadeWrap"), "Wrap In Gain", false));
+
+    {
+        NR fadeRange (1.0f, 200.0f);
+        fadeRange.setSkewForCentre (20.0f);
+        layout.add (std::make_unique<juce::AudioParameterFloat> (
+            makePID ("releaseFadeMs"), "Release Fade ms", fadeRange, 15.0f));
+    }
+
     return layout;
 }
 
@@ -223,6 +238,10 @@ VoiceParameters ResosynAudioProcessor::buildVoiceParameters() const noexcept
 
     p.masterGainLinear     = 1.0f; // master gain applied post-render in processBlock via smoothedMasterGain
     p.polyphony            = juce::jlimit (1, kMaxVoices, (int)get ("polyphony"));
+
+    p.releaseFadeMode         = (int)get ("releaseFadeMode");
+    p.releaseFadeWrapInGain   = get ("releaseFadeWrap") > 0.5f;
+    p.releaseFadeMs           = get ("releaseFadeMs");
 
     p.snapshotA = snapshotA.data();
     p.snapshotB = snapshotB.data();

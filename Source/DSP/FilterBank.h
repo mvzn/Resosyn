@@ -320,12 +320,64 @@ public:
         coeffsInitialized = false;
     }
 
+    // ── Release-fade support ──────────────────────────────────────────────────
+    // Snapshot the current target coefficients. Used as the reference state
+    // when the voice enters release cooldown and we shrink toward silence.
+    void snapshotCoefficients() noexcept
+    {
+        std::memcpy (snapB0, b0, sizeof (b0));
+        std::memcpy (snapB2, b2, sizeof (b2));
+        std::memcpy (snapA1, a1, sizeof (a1));
+        std::memcpy (snapA2, a2, sizeof (a2));
+    }
+
+    // Drive coefficients from the snapshot toward silent (all-zero) state.
+    // progress: 0=original, 1=fully shrunk. Sets prev=current first so the
+    // existing per-sample interpolation in process() smoothly bridges to the new target.
+    //
+    // polePreserve=true: a2 shrinks as (1-p)² mirroring pole radius r → r²
+    //   (poles migrate radially toward origin — filter ring-down accelerates naturally)
+    // polePreserve=false: all coefficients shrink linearly (simpler, less musical)
+    void setShrinkTarget (float progress, bool polePreserve) noexcept
+    {
+        std::memcpy (prevB0, b0, sizeof (b0));
+        std::memcpy (prevB2, b2, sizeof (b2));
+        std::memcpy (prevA1, a1, sizeof (a1));
+        std::memcpy (prevA2, a2, sizeof (a2));
+
+        const float s       = juce::jlimit (0.0f, 1.0f, 1.0f - progress);
+        const float a2Scale = polePreserve ? s * s : s;
+
+        for (int k = 0; k < kSize; ++k)
+        {
+            b0[k] = snapB0[k] * s;
+            b2[k] = snapB2[k] * s;
+            a1[k] = snapA1[k] * s;
+            a2[k] = snapA2[k] * a2Scale;
+        }
+    }
+
+    // Multiply all biquad state by a uniform factor.
+    // Mode B (state decay): place an exponential envelope around the filter state
+    // by calling this per subblock with factor < 1.
+    void scaleState (float factor) noexcept
+    {
+        for (int st = 0; st < 8; ++st)
+            for (int k = 0; k < kSize; ++k)
+            {
+                s1[st][k] *= factor;
+                s2[st][k] *= factor;
+            }
+    }
+
 private:
     // SoA: group coefficients by field, not by filter (enables AVX)
     float b0[kSize], b2[kSize];
     float a1[kSize], a2[kSize];
     float prevB0[kSize], prevB2[kSize]; // interpolation start points
     float prevA1[kSize], prevA2[kSize];
+    float snapB0[kSize], snapB2[kSize]; // coefficients at cooldown start
+    float snapA1[kSize], snapA2[kSize];
     float s1[8][kSize], s2[8][kSize];  // per-stage, per-harmonic biquad state
 
     double sr = 44100.0;

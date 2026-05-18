@@ -88,6 +88,22 @@ public:
             for (int k = p.harmonicCount; k < kNumHarmonics; ++k)
                 blendedGains[k] = 0.0f;
 
+            // Detect amp-envelope completion → enter release cooldown so we can
+            // drive the filter toward silence smoothly before flushState (which
+            // would otherwise cause a click — the filter often has residual energy).
+            if (!envelope.isActive() && !inCooldown && p.releaseFadeMode != 0
+                && stealFadeRemain == 0 && !hasPendingNote)
+            {
+                inCooldown         = true;
+                cooldownMode       = p.releaseFadeMode;
+                cooldownWrapInGain = p.releaseFadeWrapInGain;
+                cooldownTotal      = juce::jmax (16, (int)(p.releaseFadeMs * 0.001f * (float)sr));
+                cooldownRemain     = cooldownTotal;
+
+                if (cooldownMode == 3 || cooldownMode == 4)
+                    filterBank.snapshotCoefficients();
+            }
+
             // Flush biquad state when filter type changes: state accumulated under
             // bandpass equations is garbage for peak EQ equations (and vice versa),
             // causing a large spike on the first output sample after the switch.
@@ -97,14 +113,31 @@ public:
                 lastFilterType = p.filterType;
             }
 
-            // Divide peak gain across stages so total gain equals the target.
-            float perStagePeakGainDB = p.peakGainMasterDB / (float)p.filterStages;
-            filterBank.updateCoefficients (fundamental, p.filterStretch,
-                                           p.overallQ,
-                                           p.perHarmonicFreqSemitones,
-                                           p.perHarmonicDetuneCents,
-                                           p.perHarmonicQMult,
-                                           p.filterType, perStagePeakGainDB);
+            // Coefficient path: modes 3/4 override targets to shrink toward silence.
+            if (inCooldown && (cooldownMode == 3 || cooldownMode == 4))
+            {
+                const float progress = 1.0f - (float)cooldownRemain / (float)cooldownTotal;
+                filterBank.setShrinkTarget (progress, cooldownMode == 3);
+            }
+            else
+            {
+                // Divide peak gain across stages so total gain equals the target.
+                float perStagePeakGainDB = p.peakGainMasterDB / (float)p.filterStages;
+                filterBank.updateCoefficients (fundamental, p.filterStretch,
+                                               p.overallQ,
+                                               p.perHarmonicFreqSemitones,
+                                               p.perHarmonicDetuneCents,
+                                               p.perHarmonicQMult,
+                                               p.filterType, perStagePeakGainDB);
+            }
+
+            // Mode B (State Decay): wrap the filter state in an exponential envelope.
+            // Factor chosen so 4 time constants fit within the cooldown window.
+            if (inCooldown && cooldownMode == 2)
+            {
+                const float factor = std::exp (-4.0f * (float)n / (float)cooldownTotal);
+                filterBank.scaleState (factor);
+            }
 
             generateExcitation (excBuf, n, p);
 
@@ -201,16 +234,43 @@ public:
                 }
             }
 
+            // Release fade — gain ramp (mode 1 alone, or wrapping modes 2/3/4).
+            if (inCooldown && (cooldownMode == 1 || cooldownWrapInGain))
+            {
+                for (int i = 0; i < n; ++i)
+                {
+                    float t = (float)(cooldownRemain - i) / (float)cooldownTotal;
+                    t = juce::jmax (0.0f, t);
+                    tmpL[i] *= t;
+                    tmpR[i] *= t;
+                }
+            }
+
             for (int i = 0; i < n; ++i)
             {
                 outL[offset + i] += tmpL[i];
                 outR[offset + i] += tmpR[i];
             }
 
+            if (inCooldown)
+            {
+                cooldownRemain -= n;
+                if (cooldownRemain <= 0)
+                {
+                    cooldownRemain = 0;
+                    inCooldown     = false;
+                    active         = false;
+                    filterBank.flushState();
+                    break; // no further audio this block
+                }
+            }
+
             offset += n;
         }
 
-        if (!envelope.isActive() && stealFadeRemain == 0 && !hasPendingNote)
+        // Off mode (instant) — original behavior, kept as baseline for comparison.
+        if (!envelope.isActive() && stealFadeRemain == 0 && !hasPendingNote
+            && !inCooldown && active && p.releaseFadeMode == 0)
         {
             active = false;
             filterBank.flushState();
@@ -247,6 +307,14 @@ private:
     float    pendingVelocity  = 0.0f;
     uint64_t pendingAge       = 0;
 
+    // Release cooldown state. Activates when the amp envelope completes; during this
+    // window we drive the filter toward silence (per chosen mode) before flushState.
+    bool     inCooldown          = false;
+    int      cooldownRemain      = 0;
+    int      cooldownTotal       = 0;
+    int      cooldownMode        = 0;       // snapshot of releaseFadeMode at entry
+    bool     cooldownWrapInGain  = false;
+
     juce::AudioBuffer<float> excitationBuf;
     juce::AudioBuffer<float> tempL, tempR;
 
@@ -266,6 +334,8 @@ private:
         samplerPingPongFwd= true;
         hasPendingNote    = false;
         stealFadeRemain   = 0;
+        inCooldown        = false;
+        cooldownRemain    = 0;
         lastFilterType    = -1;
         ringWritePos      = 0;
         std::memset (excRingBuf, 0, sizeof (excRingBuf));

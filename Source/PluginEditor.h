@@ -68,6 +68,17 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
         attackAttach, decayAttach, sustainAttach, releaseAttach;
 
+    // ── Release fade (post-envelope cooldown — A/B testing) ─────────────────
+    juce::Label        releaseFadeLabel;
+    juce::ComboBox     releaseFadeModeCombo;
+    juce::ToggleButton releaseFadeWrapButton;
+    juce::Slider       releaseFadeMsSlider;
+    juce::Label        releaseFadeMsLabel;
+
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> releaseFadeModeAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>   releaseFadeWrapAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   releaseFadeMsAttach;
+
     // ── Harmonic editor popup ────────────────────────────────────────────────
     struct HarmonicDocWindow : juce::DocumentWindow {
         std::function<void()> onClose;

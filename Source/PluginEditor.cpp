@@ -146,6 +146,31 @@ ResosynAudioProcessorEditor::ResosynAudioProcessorEditor (ResosynAudioProcessor&
     sustainAttach = std::make_unique<APVTS::SliderAttachment> (apvts, "envSustain", sustainSlider);
     releaseAttach = std::make_unique<APVTS::SliderAttachment> (apvts, "envRelease", releaseSlider);
 
+    // ── Release fade (post-envelope cooldown — A/B test controls) ────────────
+    initSectionLabel (releaseFadeLabel, "RELEASE FADE");
+    addAndMakeVisible (releaseFadeLabel);
+
+    releaseFadeModeCombo.addItem ("Off (instant)", 1);
+    releaseFadeModeCombo.addItem ("Gain Ramp",     2);
+    releaseFadeModeCombo.addItem ("State Decay",   3);
+    releaseFadeModeCombo.addItem ("Pole Shrink",   4);
+    releaseFadeModeCombo.addItem ("Coef Ramp",     5);
+    addAndMakeVisible (releaseFadeModeCombo);
+    releaseFadeModeAttach = std::make_unique<APVTS::ComboBoxAttachment> (apvts, "releaseFadeMode", releaseFadeModeCombo);
+
+    releaseFadeWrapButton.setButtonText ("Wrap Gain");
+    addAndMakeVisible (releaseFadeWrapButton);
+    releaseFadeWrapAttach = std::make_unique<APVTS::ButtonAttachment> (apvts, "releaseFadeWrap", releaseFadeWrapButton);
+
+    releaseFadeMsSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    releaseFadeMsSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 50, 18);
+    releaseFadeMsSlider.setTextValueSuffix (" ms");
+    addAndMakeVisible (releaseFadeMsSlider);
+    initKnobLabel (releaseFadeMsLabel, "Fade");
+    releaseFadeMsLabel.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (releaseFadeMsLabel);
+    releaseFadeMsAttach = std::make_unique<APVTS::SliderAttachment> (apvts, "releaseFadeMs", releaseFadeMsSlider);
+
     // ── Morph ─────────────────────────────────────────────────────────────────
     initSectionLabel (morphLabel, "MORPH");
     addAndMakeVisible (morphLabel);
@@ -392,6 +417,13 @@ void ResosynAudioProcessorEditor::resized()
     harmonicsButton.setBounds (col1 + 6,              row1 + 90,  W - 12,      22);
     analyzeBtnA.setBounds     (col1 + 6,              row1 + 118, (W - 16) / 2, 22);
     analyzeBtnB.setBounds     (col1 + 6 + (W - 16) / 2 + 4, row1 + 118, (W - 16) / 2, 22);
+
+    // ── Release fade (sub-section in master column) ────────────────────────
+    releaseFadeLabel.setBounds      (col1 + 6,          row1 + 148, W - 12, 16);
+    releaseFadeModeCombo.setBounds  (col1 + 6,          row1 + 168, 140,    22);
+    releaseFadeWrapButton.setBounds (col1 + 152,        row1 + 168, W - 158, 22);
+    releaseFadeMsLabel.setBounds    (col1 + 6,          row1 + 196, 38,     22);
+    releaseFadeMsSlider.setBounds   (col1 + 6 + 42,     row1 + 196, W - 12 - 42, 22);
 
     // ── Filter response display + harmonic low-cut + compensation ───────────
     {
